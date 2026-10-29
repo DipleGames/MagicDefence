@@ -2,7 +2,8 @@
 // Small dependency-free polygon renderer. All scenery and the mage are 3D meshes.
 const canvas=document.querySelector('#world'),ctx=canvas.getContext('2d');
 let w=0,h=0,scale=1,angle=0,targetAngle=0,spell='arcane',pulse=-10,now=0;
-const player={x:0,z:0,targetX:0,targetZ:0,facing:0};
+const combat=new DefenceGame();
+const player=combat.hero;
 let previousFrame=null,meshOrigin=null;
 const MOVE_SPEED=3.5;
 const FIELD={halfWidth:6,halfDepth:8};
@@ -11,7 +12,7 @@ let viewY=0;
 let navigation=null;
 let paused=false;
 let stageRect=null;
-let gameTime=0,mana=100;
+let gameTime=0;
 const abilities={arcane:{key:'Q',cost:12,cooldown:3},fire:{key:'W',cost:20,cooldown:5},ice:{key:'E',cost:25,cooldown:7},ultimate:{key:'R',cost:50,cooldown:16}};
 const readyAt={arcane:0,fire:0,ice:0,ultimate:0};
 const camera={x:0,z:0};
@@ -68,7 +69,7 @@ function nearestDestination(x,z){
 }
 let walkCycle=0;
 function updateMovement(dt){
- let remaining=MOVE_SPEED*dt;
+ let remaining=player.speed*dt;
  const startX=player.x,startZ=player.z;
  while(route.length&&remaining>0){const next=route[0],dx=next.x-player.x,dz=next.z-player.z,distance=Math.hypot(dx,dz);
   if(distance<=remaining){player.x=next.x;player.z=next.z;remaining-=distance;route.shift();}else{player.x+=dx/distance*remaining;player.z+=dz/distance*remaining;remaining=0;}}
@@ -78,7 +79,7 @@ function updateMovement(dt){
   player.facing+=difference*(1-Math.exp(-22*dt));walkCycle+=moved*9;
  }
 }
-function playerPoint([x,y,z]){const c=Math.cos(player.facing),s=Math.sin(player.facing);return [player.x+x*c+z*s,y,player.z-x*s+z*c];}
+function playerPoint([x,y,z],origin=player){const c=Math.cos(origin.facing||0),s=Math.sin(origin.facing||0);return [origin.x+x*c+z*s,y,origin.z-x*s+z*c];}
 const reduced=matchMedia('(prefers-reduced-motion: reduce)').matches;
 const palette={arcane:'#d0e89e',fire:'#ffb16e',ice:'#9fe4ef',ultimate:'#d6afff'};
 function resize(){const r=canvas.getBoundingClientRect();w=r.width;h=r.height;const d=Math.min(devicePixelRatio||1,2);canvas.width=w*d;canvas.height=h*d;ctx.setTransform(d,0,0,d,0,0);fitView();}
@@ -90,12 +91,13 @@ function fitView(){
  navigation={left:(stageRect.left-w/2)/scale+.8,right:(stageRect.right-w/2)/scale-.8,top:(stageRect.top+2.9*.86*scale+8-viewY)/(scale*.66),bottom:(stageRect.bottom-.9*.66*scale-8-viewY)/(scale*.66)};
  const position=nearestDestination(player.x,player.z);
  if(position){player.x=position.x;player.z=position.z;}
+ combat.setArena({...navigation,angle});
  if(route.length){const destination=nearestDestination(player.targetX,player.targetZ);player.targetX=destination.x;player.targetZ=destination.z;route=findRoute(destination.x,destination.z)||[];}
 }
 function groundPoint(px,py){const rx=(px-w/2)/scale,rz=(py-viewY)/(scale*.66),c=Math.cos(angle),s=Math.sin(angle);return [rx*c+rz*s,0,-rx*s+rz*c];}
 function project([x,y,z]){x-=camera.x;z-=camera.z;const c=Math.cos(angle),s=Math.sin(angle),rx=x*c-z*s,rz=x*s+z*c;return [w/2+rx*scale,viewY+(rz*.66-y*.86)*scale,rz*.86+y*.66];}
 let faces=[];
-function poly(vertices,color){const p=vertices.map(v=>project(meshOrigin?playerPoint(v):v));faces.push({p,color,layer:meshOrigin?1:0,depth:p.reduce((a,v)=>a+v[2],0)/p.length});}
+function poly(vertices,color){const p=vertices.map(v=>project(meshOrigin?playerPoint(v,meshOrigin):v));faces.push({p,color,owner:meshOrigin,layer:meshOrigin?1:0,depth:p.reduce((a,v)=>a+v[2],0)/p.length});}
 function ring(x,y,z,r1,r2,height,n,colors,rotation=0){for(let i=0;i<n;i++){const a=rotation+i*Math.PI*2/n,b=rotation+(i+1)*Math.PI*2/n;poly([[x+Math.cos(a)*r1,y,z+Math.sin(a)*r1],[x+Math.cos(b)*r1,y,z+Math.sin(b)*r1],[x+Math.cos(b)*r2,y+height,z+Math.sin(b)*r2],[x+Math.cos(a)*r2,y+height,z+Math.sin(a)*r2]],colors[i%colors.length]);}if(r2>0)poly(Array.from({length:n},(_,i)=>[x+Math.cos(rotation+i*Math.PI*2/n)*r2,y+height,z+Math.sin(rotation+i*Math.PI*2/n)*r2]),colors[0]);}
 function lineGround(radius,color,width=1,offset=0,center=player){ctx.beginPath();for(let i=0;i<=90;i++){const a=i/90*Math.PI*2,p=project([center.x+Math.cos(a)*radius,.035,center.z+Math.sin(a)*radius]);if(i===0)ctx.moveTo(p[0],p[1]+offset);else ctx.lineTo(p[0],p[1]+offset);}ctx.strokeStyle=color;ctx.lineWidth=width;ctx.stroke();}
 function box(x,y,z,width,height,depth,colors){
@@ -149,10 +151,47 @@ function drawField(){
   for(const dx of [4,Math.min(tw,r-x-2)-4])for(const dy of [4,th-4])floor([[x+dx-1,y+dy-1],[x+dx+2,y+dy-1],[x+dx+2,y+dy+2],[x+dx-1,y+dy+2]],'#ead4a5');
  }
 }
+function drawEnemy(enemy){
+ meshOrigin=enemy;const flash=enemy.flashUntil>combat.time,c=flash?'#fff0c5':enemy.color,r=enemy.radius;
+ if(enemy.type==='slime'){ring(0,.06,0,r,r*.85,.5,7,[c,'#569660','#95d194']);ring(0,.56,0,r*.85,0,.35,7,[c,'#95d194']);}
+ else if(enemy.type==='runner'){ring(0,.12,0,r,r,.5,6,[c,'#ac4f4b','#e79565']);for(const x of [-1,1])for(const z of [-.3,.3])box(x*r,.04,z,.12,.23,.16,[c,'#784447','#a65a4c']);ring(0,.62,0,r*.7,0,.3,5,[c,'#efaf72']);}
+ else if(enemy.type==='wisp'||enemy.type==='ember'){const bob=.15+Math.sin(now*3+enemy.id)*.1;ring(0,.5+bob,0,r,0,.9,5,[c,'#c1a1ec','#7558a9']);ring(0,.15+bob,0,0,r,.35,5,[c,'#8e72bd']);}
+ else {box(0,.15,0,r*1.5,enemy.boss?1.3:.8,r*1.3,[c,'#637683','#98a6aa']);ring(0,enemy.boss?1.45:1,0,r*.6,r*.55,.6,5,[c,'#bfc8b7','#82949b']);if(enemy.boss){for(const x of [-r,r])ring(x,1.5,0,.3,0,.9,4,[c,'#e4c88c']);}}
+ const eyeY=enemy.boss?1.85:enemy.type==='wisp'?.95:.55;
+ box(-r*.27,eyeY,r*.75,.12,.12,.05,['#ffee9c','#ffee9c','#ffee9c']);box(r*.27,eyeY,r*.75,.12,.12,.05,['#ffee9c','#ffee9c','#ffee9c']);
+ meshOrigin=null;
+}
+function drawDanger(){
+ for(const hazard of combat.hazards){const p=project([hazard.x,0,hazard.z]),progress=(combat.time-hazard.start)/(hazard.resolveAt-hazard.start);ellipse(p[0],p[1],hazard.radius*scale,hazard.radius*scale*.66,'#dc51482b');lineGround(hazard.radius,'#f36a56dd',2,0,hazard);lineGround(hazard.radius*Math.min(1,progress),'#ffdb8dcc',2,0,hazard);}
+ for(const enemy of combat.enemies)if(enemy.activeAt>combat.time)lineGround(enemy.radius+.4,'#d8b2efbb',2,0,enemy);
+}
+function drawCombatOverlay(){
+ for(const enemy of combat.enemies){if(enemy.hp<=0)continue;const p=project([enemy.x,enemy.boss?2.9:1.65,enemy.z]),width=enemy.boss?58:30;ctx.fillStyle='#293b45';ctx.fillRect(p[0]-width/2,p[1]-4,width,5);ctx.fillStyle=enemy.boss?'#e2955f':'#df6e65';ctx.fillRect(p[0]-width/2+1,p[1]-3,(width-2)*enemy.hp/enemy.maxHp,3);}
+ for(const p of combat.projectiles){const point=project([p.x,.6,p.z]);ellipse(point[0],point[1],p.hostile?5:4,p.hostile?5:4,p.hostile?'#f79565':'#afefff');ellipse(point[0],point[1],2,2,'#fff6cf');}
+ ctx.textAlign='center';ctx.font='bold 13px system-ui';for(const number of combat.numbers){const p=project([number.x,1.9+(1-(number.until-combat.time)/.7),number.z]);ctx.fillStyle='#2c344b';ctx.fillText(number.text,p[0]+1,p[1]+1);ctx.fillStyle=number.color;ctx.fillText(number.text,p[0],p[1]);}
+}
+function updateCombatHud(){
+ const set=(selector,text)=>{document.querySelector(selector).textContent=text;};
+ set('#hero-level',player.level);set('#portrait-level',player.level);set('#meta-level',String(player.level).padStart(2,'0'));set('#power-value',player.power);set('#speed-value',Math.round(player.speed*100));set('#gold-value',player.gold);set('#armor-value',player.armor);
+ set('#health-value',`${Math.ceil(player.hp)} / ${player.maxHp}`);document.querySelector('#health-fill').style.width=`${player.hp/player.maxHp*100}%`;
+ const needed=60+30*(player.level-1)+10*(player.level-1)**2,percent=player.xp/needed*100;
+ for(const selector of ['#top-xp-fill','#hud-xp-fill'])document.querySelector(selector).style.width=`${percent}%`;
+ document.querySelector('#xp-meter').title=`경험치 ${player.xp} / ${needed}`;set('#xp-value',`XP ${player.xp} / ${needed}`);
+ set('#stage-number',String(Math.max(1,combat.stage)).padStart(2,'0'));
+ set('#wave-status',combat.phase==='defeat'?'도전 종료':combat.phase==='intermission'?`다음 스테이지 ${Math.max(0,Math.ceil(combat.nextStageAt-combat.time))}초`:`남은 적 ${combat.enemies.filter(e=>e.hp>0).length}`);
+ const boss=combat.enemies.find(e=>e.boss&&e.hp>0);document.querySelector('#boss-hud').hidden=!boss;
+ if(boss){set('#boss-name',boss.name);set('#boss-hp',`${Math.ceil(boss.hp)} / ${boss.maxHp}`);document.querySelector('#boss-fill').style.width=`${boss.hp/boss.maxHp*100}%`;}
+ const event=combat.events[combat.events.length-1],toast=document.querySelector('#battle-toast');toast.hidden=!event;if(event){toast.textContent=event.text;toast.dataset.kind=event.kind;}
+ if(combat.phase==='defeat'){
+  route=[];document.querySelector('#pause-panel').hidden=false;set('#pause-title','도전 종료');set('#pause-summary',`스테이지 ${combat.stage} · Lv.${player.level} · ${combat.kills}마리 처치`);set('#resume','다시 도전 ▶');
+ }else{set('#pause-title','잠시 쉬어가기');set('#pause-summary',`스테이지 ${Math.max(1,combat.stage)} · Lv.${player.level}`);set('#resume','계속하기 ▶');}
+}
+function restartRun(){combat.reset();gameTime=0;pulse=-10;route=[];angle=targetAngle=0;for(const id in readyAt)readyAt[id]=0;}
 function render(ms){now=ms/1000;const dt=previousFrame===null?0:Math.min(Math.max(now-previousFrame,0),.1);previousFrame=now;
- if(!paused){gameTime+=dt;mana=Math.min(100,mana+7*dt);updateMovement(dt);angle+=(targetAngle-angle)*(1-Math.exp(-7*dt));}
+ if(!paused&&combat.phase!=='defeat'){gameTime+=dt;updateMovement(dt);combat.update(dt);angle+=(targetAngle-angle)*(1-Math.exp(-7*dt));}
  updateAbilityHud();fitView();ctx.clearRect(0,0,w,h);drawScenery();faces=[];
 drawField();
+for(const enemy of combat.enemies)if(enemy.hp>0)drawEnemy(enemy);
 // Mage: boots, six-sided robe, sleeves, head, broad brim, pointed hat, staff.
 meshOrigin=player;
 const stride=!reduced&&route.length?Math.sin(walkCycle)*.12:0;
@@ -171,7 +210,12 @@ ring(0,1.79+bob,0,.405,.37,.12,7,['#baa46a','#e0c98c','#baa46a']);
 ring(.73,.02,.13,.055,.055,2.05,5,['#8a7051','#b09462','#68583e']);ring(.73,2.03,.13,.16,0,.32,5,['#a9e0c6','#dcf4ce','#7bbfb1']);
 meshOrigin=null;
 // Ground is always drawn before actors; a large ground polygon must never hide the mage.
-faces.sort((a,b)=>a.layer-b.layer||(a.layer===0?0:a.depth-b.depth));let shadowDrawn=false;for(const f of faces){if(f.layer===1&&!shadowDrawn){const foot=project([player.x,0,player.z]);ellipse(foot[0],foot[1],scale*.75,scale*.26,'#5d574747');shadowDrawn=true;}ctx.beginPath();f.p.forEach((p,i)=>i?ctx.lineTo(p[0],p[1]):ctx.moveTo(p[0],p[1]));ctx.closePath();ctx.fillStyle=f.color;ctx.fill();}
+faces.sort((a,b)=>a.layer-b.layer||(a.layer===0?0:a.depth-b.depth));const shadows=new Set();let dangerDrawn=false;
+for(const f of faces){
+ if(f.layer===1&&!dangerDrawn){drawDanger();dangerDrawn=true;}
+ if(f.owner&&!shadows.has(f.owner)){const foot=project([f.owner.x,0,f.owner.z]);ellipse(foot[0],foot[1],scale*(f.owner.radius||.75),scale*.26,'#5d574747');shadows.add(f.owner);}
+ ctx.beginPath();f.p.forEach((p,i)=>i?ctx.lineTo(p[0],p[1]):ctx.moveTo(p[0],p[1]));ctx.closePath();ctx.fillStyle=f.color;ctx.fill();
+}
 // Ground sigils sit around the robe, with a soft magical staff glow.
 if(Math.hypot(player.targetX-player.x,player.targetZ-player.z)>.05){lineGround(.3,'#e4efba',2,0,{x:player.targetX,z:player.targetZ});}
 lineGround(.66,'#72d4fcaa',2);lineGround(.8,'#345a7555',1);
@@ -184,20 +228,22 @@ const age=gameTime-pulse;if(age<1.3){const color=palette[spell];ctx.globalAlpha=
  if(spell==='ultimate'){const p=project([player.x,0,player.z]),beam=ctx.createLinearGradient(p[0]-30,0,p[0]+30,0);beam.addColorStop(0,'#d6afff00');beam.addColorStop(.5,'#f8e4ff99');beam.addColorStop(1,'#d6afff00');ctx.fillStyle=beam;ctx.fillRect(p[0]-30,0,60,p[1]);}
  ctx.globalAlpha=1;}
 for(let i=0;i<16;i++){const t=reduced?i:now*.18+i*1.87,x=Math.sin(i*23.4)*7,z=Math.cos(i*17.3)*12,y=.4+(t%2),p=project([x,y,z]);ctx.globalAlpha=.25+.35*Math.sin(t*3)**2;ctx.fillStyle='#d3edac';ctx.beginPath();ctx.arc(p[0],p[1],1.2,0,Math.PI*2);ctx.fill();}ctx.globalAlpha=1;
-const bar=project([player.x,3.1,player.z]);ctx.fillStyle='#384c44';ctx.fillRect(bar[0]-19,bar[1]-5,38,7);ctx.fillStyle='#63dd64';ctx.fillRect(bar[0]-17,bar[1]-3,34,3);ctx.fillStyle='#247d3b';for(let i=1;i<5;i++)ctx.fillRect(bar[0]-17+i*6.8,bar[1]-3,1,3);
+const bar=project([player.x,3.1,player.z]);ctx.fillStyle='#384c44';ctx.fillRect(bar[0]-19,bar[1]-5,38,7);ctx.fillStyle='#63dd64';ctx.fillRect(bar[0]-17,bar[1]-3,34*player.hp/player.maxHp,3);ctx.fillStyle='#247d3b';for(let i=1;i<5;i++)ctx.fillRect(bar[0]-17+i*6.8,bar[1]-3,1,3);
+ drawCombatOverlay();
  requestAnimationFrame(render);}
 function updateAbilityHud(){
- document.querySelector('#mana-fill').style.width=`${mana}%`;
- document.querySelector('#mana-value').textContent=`${Math.floor(mana)} / 100`;
- document.querySelectorAll('.skill').forEach(button=>{const id=button.dataset.spell,remaining=Math.max(0,readyAt[id]-gameTime);button.classList.toggle('on-cooldown',remaining>0);button.classList.toggle('no-mana',mana<abilities[id].cost);button.setAttribute('aria-disabled',String(paused||remaining>0||mana<abilities[id].cost));button.querySelector('.cooldown').textContent=remaining>0?Math.ceil(remaining):'';});
+ document.querySelector('#mana-fill').style.width=`${combat.hero.mana/player.maxMana*100}%`;
+ document.querySelector('#mana-value').textContent=`${Math.floor(combat.hero.mana)} / ${player.maxMana}`;
+ document.querySelectorAll('.skill').forEach(button=>{const id=button.dataset.spell,remaining=Math.max(0,readyAt[id]-gameTime);button.classList.toggle('on-cooldown',remaining>0);button.classList.toggle('no-mana',combat.hero.mana<abilities[id].cost);button.setAttribute('aria-disabled',String(paused||combat.phase!=='fighting'||remaining>0||combat.hero.mana<abilities[id].cost));button.querySelector('.cooldown').textContent=remaining>0?Math.ceil(remaining):'';});
+ updateCombatHud();
 }
 function cast(id=spell){
- const ability=abilities[id];if(paused||!ability||readyAt[id]>gameTime||mana<ability.cost)return false;
- spell=id;mana-=ability.cost;readyAt[id]=gameTime+ability.cooldown;pulse=gameTime;
+ const ability=abilities[id];if(paused||combat.phase!=='fighting'||!ability||readyAt[id]>gameTime||combat.hero.mana<ability.cost)return false;
+ spell=id;combat.hero.mana-=ability.cost;readyAt[id]=gameTime+ability.cooldown/(1+player.haste);pulse=gameTime;combat.castSpell(id);
  document.querySelectorAll('.skill').forEach(button=>button.classList.toggle('active',button.dataset.spell===id));updateAbilityHud();return true;
 }
 function moveToPointer(event){
- if(paused)return;
+ if(paused||combat.phase==='defeat')return;
  const rect=canvas.getBoundingClientRect(),rx=(event.clientX-rect.left-w/2)/scale,rz=(event.clientY-rect.top-viewY)/(scale*.66);
  const c=Math.cos(angle),s=Math.sin(angle);
  const destination=nearestDestination(camera.x+rx*c+rz*s,camera.z-rx*s+rz*c);if(!destination)return;
@@ -215,11 +261,11 @@ document.querySelectorAll('.skill').forEach(button=>button.addEventListener('cli
 document.querySelector('#sound').addEventListener('click',()=>{if(!paused)targetAngle+=Math.PI/4;});
 function setPaused(value){paused=value;document.querySelector('#pause-panel').hidden=!value;document.querySelector('#pause').setAttribute('aria-label',value?'계속하기':'일시 정지');updateAbilityHud();}
 document.querySelector('#pause').addEventListener('click',()=>setPaused(!paused));
-document.querySelector('#resume').addEventListener('click',()=>setPaused(false));
+document.querySelector('#resume').addEventListener('click',()=>{if(combat.phase==='defeat')restartRun();setPaused(false);});
 document.addEventListener('keydown',event=>{
  if(event.repeat||event.ctrlKey||event.altKey||event.metaKey||event.isComposing)return;
  if(event.target?.closest?.('input,textarea,select,[contenteditable="true"]'))return;
- if(event.code==='Escape'){event.preventDefault();setPaused(!paused);return;}
+ if(event.code==='Escape'){event.preventDefault();if(combat.phase!=='defeat')setPaused(!paused);return;}
  const id={KeyQ:'arcane',KeyW:'fire',KeyE:'ice',KeyR:'ultimate'}[event.code];
  if(id){event.preventDefault();cast(id);}
 });

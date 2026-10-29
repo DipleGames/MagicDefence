@@ -1,7 +1,8 @@
+const {DefenceGame}=require('../src/combat.js');
 const fs = require('node:fs');
 const vm = require('node:vm');
 const assert = require('node:assert/strict');
-const context = vm.createContext({document:{querySelector:()=>({getContext(){}})}});
+const context = vm.createContext({DefenceGame,document:{querySelector:()=>({getContext(){}})}});
 const source = fs.readFileSync(require('node:path').join(__dirname, '../src/game.js'), 'utf8');
 vm.runInContext(source.slice(0, source.indexOf('const reduced=')), context);
 const run = code => vm.runInContext(code, context);

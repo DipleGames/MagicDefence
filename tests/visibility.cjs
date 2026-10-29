@@ -1,3 +1,4 @@
+const {DefenceGame}=require('../src/combat.js');
 const fs = require('node:fs');
 const vm = require('node:vm');
 const assert = require('node:assert/strict');
@@ -13,9 +14,9 @@ for (const [width, height] of [[1280,720], [1920,1080], [2560,1440], [800,600]])
     getBoundingClientRect: () => ({width, height, left: 10, top: 20}),
     addEventListener: (name, handler) => { handlers[name] = handler; },
   };
-  const context = vm.createContext({
+  const context = vm.createContext({DefenceGame,
     document: {
-      querySelector: selector => selector === '#world' ? canvas : {addEventListener() {},style:{},setAttribute() {}},
+      querySelector: selector => selector === '#world' ? canvas : {addEventListener() {},style:{},dataset:{},setAttribute() {}},
       addEventListener() {},
       querySelectorAll: () => [],
     },

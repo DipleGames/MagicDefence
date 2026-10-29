@@ -12,15 +12,14 @@
     <canvas id="world" aria-label="하늘에 떠 있는 황금빛 섬의 석판 전투장과 마법사"></canvas>
     <header class="hud">
       <button id="pause" class="pause" aria-label="일시 정지"><i></i><i></i></button>
-      <div class="level"><span>Lv. 1</span><div class="xp"><div></div></div></div>
-      <div class="coins"><span>◆</span> 425</div>
-      <div class="stage"><span>✦</span> 하늘빛 유적 <b>01</b></div>
-      <div class="wave">준비 단계</div>
+      <div class="level"><span>Lv. <b id="hero-level">1</b></span><div class="xp" id="xp-meter"><div id="top-xp-fill"></div></div></div>
+      <div class="stage"><span>✦</span> 하늘빛 유적 <b id="stage-number">01</b></div>
+      <div class="wave" id="wave-status">전투 준비</div>
     </header>
     <button id="sound" class="view" aria-label="시점 회전">↻</button>
     <section class="champion-hud" aria-label="캐릭터 상태 및 스킬">
-      <div class="portrait"><svg viewBox="0 0 80 90" aria-hidden="true"><path fill="#253752" d="M0 90 13 65 37 56 65 65 80 90Z"/><path fill="#7288b7" d="m15 90 11-29 16-8 19 14 8 23Z"/><path fill="#d9b68f" d="M29 40h25v23L41 72 28 59Z"/><path fill="#a9b9d6" d="m28 57 13 7 13-7-8 20-12-6Z"/><path fill="#516d9e" d="m9 45 17-12L39 3l13 18 7 16 15 13-31 7Z"/><path fill="#8296bc" d="M39 3 30 37l14 9 8-25Z"/><path stroke="#d4b56b" stroke-width="5" d="m26 35 29 6"/><path stroke="#283448" stroke-width="3" d="M33 51h5m8 1h5"/></svg><span>1</span></div>
-      <div class="champion-info"><strong>비전 마법사</strong><span>✦ 마법 공격력 <b>24</b></span><span>➤ 이동 속도 <b>350</b></span></div>
+      <div class="portrait"><svg viewBox="0 0 80 90" aria-hidden="true"><path fill="#253752" d="M0 90 13 65 37 56 65 65 80 90Z"/><path fill="#7288b7" d="m15 90 11-29 16-8 19 14 8 23Z"/><path fill="#d9b68f" d="M29 40h25v23L41 72 28 59Z"/><path fill="#a9b9d6" d="m28 57 13 7 13-7-8 20-12-6Z"/><path fill="#516d9e" d="m9 45 17-12L39 3l13 18 7 16 15 13-31 7Z"/><path fill="#8296bc" d="M39 3 30 37l14 9 8-25Z"/><path stroke="#d4b56b" stroke-width="5" d="m26 35 29 6"/><path stroke="#283448" stroke-width="3" d="M33 51h5m8 1h5"/></svg><span id="portrait-level">1</span></div>
+      <div class="champion-info"><strong>비전 마법사</strong><span>✦ 마법 공격력 <b id="power-value">24</b></span><span>➤ 이동 속도 <b id="speed-value">350</b></span><span>◇ 방어력 <b id="armor-value">5</b></span></div>
       <div class="ability-panel">
         <div class="skills">
           <button class="skill active" data-spell="arcane" title="Q · 비전 파동 | 마나 12 · 재사용 3초"><kbd>Q</kbd><span>✧</span><small>비전 파동</small><em class="cooldown"></em></button>
@@ -28,13 +27,16 @@
           <button class="skill ice" data-spell="ice" title="E · 서리 고리 | 마나 25 · 재사용 7초"><kbd>E</kbd><span>❄</span><small>서리 고리</small><em class="cooldown"></em></button>
           <button class="skill ultimate" data-spell="ultimate" title="R · 천상의 심판 | 마나 50 · 재사용 16초"><kbd>R</kbd><span>☄</span><small>천상의 심판</small><em class="cooldown"></em></button>
         </div>
-        <div class="resource health-resource"><div></div><span>100 / 100</span></div>
+        <div class="resource health-resource"><div id="health-fill"></div><span id="health-value">160 / 160</span></div>
         <div class="resource mana-resource"><div id="mana-fill"></div><span id="mana-value">100 / 100</span></div>
       </div>
-      <div class="hud-meta"><span class="hud-gold">◆ <b>425</b></span><span>LEVEL <b>01</b></span><div class="hud-xp"><div></div></div><span class="connection">✦ 비전 계열</span></div>
+      <div class="hud-meta"><span class="hud-gold">◆ <b id="gold-value">0</b></span><span>LEVEL <b id="meta-level">01</b></span><div class="hud-xp"><div id="hud-xp-fill"></div></div><span class="connection" id="xp-value">XP 0 / 60</span></div>
     </section>
-    <div id="pause-panel" class="pause-panel" hidden><div class="pause-card"><small>MAGIC DEFENCE</small><h1>잠시 쉬어가기</h1><p>하늘빛 유적 · 준비 단계</p><button id="resume">계속하기 <span>▶</span></button></div></div>
+    <div id="boss-hud" class="boss-hud" hidden><div><strong id="boss-name"></strong><span id="boss-hp"></span></div><div class="boss-track"><div id="boss-fill"></div></div></div>
+    <div id="battle-toast" class="battle-toast" hidden></div>
+    <div id="pause-panel" class="pause-panel" hidden><div class="pause-card"><small>MAGIC DEFENCE</small><h1 id="pause-title">잠시 쉬어가기</h1><p id="pause-summary">하늘빛 유적</p><button id="resume">계속하기 <span>▶</span></button></div></div>
   </main>
+  <script src="src/combat.js"></script>
   <script src="src/game.js"></script>
 </body>
 </html>
