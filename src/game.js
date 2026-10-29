@@ -8,10 +8,14 @@ const MOVE_SPEED=3.5;
 const FIELD={halfWidth:6,halfDepth:8};
 const GROUND=FIELD;
 let viewY=0;
+let navigation=null;
 const camera={x:0,z:0};
 const obstacles=[];
 let route=[];
-function walkable(x,z){return Math.abs(x)<=FIELD.halfWidth && Math.abs(z)<=FIELD.halfDepth && !obstacles.some(o=>Math.abs(x-o.x)<o.w/2+.7 && Math.abs(z-o.z)<o.d/2+.7);}
+function walkable(x,z){
+ const c=Math.cos(angle),s=Math.sin(angle),rx=x*c-z*s,rz=x*s+z*c;
+ const inside=navigation?rx>=navigation.left-1e-8&&rx<=navigation.right+1e-8&&rz>=navigation.top-1e-8&&rz<=navigation.bottom+1e-8:Math.abs(x)<=FIELD.halfWidth&&Math.abs(z)<=FIELD.halfDepth;
+ return inside && !obstacles.some(o=>Math.abs(x-o.x)<o.w/2+.7 && Math.abs(z-o.z)<o.d/2+.7);}
 // Visibility graph: exact straight segments and obstacle corners, without grid snapping.
 function clearSegment(a,b){
  if(!walkable(a.x,a.z)||!walkable(b.x,b.z))return false;
@@ -46,7 +50,10 @@ function findRoute(x,z){
  const path=[];for(let i=1;i!==0;i=previous[i])path.push(nodes[i]);return path.reverse();
 }
 function nearestDestination(x,z){
- x=Math.max(-FIELD.halfWidth,Math.min(FIELD.halfWidth,x));z=Math.max(-FIELD.halfDepth,Math.min(FIELD.halfDepth,z));
+ if(navigation){
+  const c=Math.cos(angle),s=Math.sin(angle),rx=Math.max(navigation.left,Math.min(navigation.right,x*c-z*s)),rz=Math.max(navigation.top,Math.min(navigation.bottom,x*s+z*c));
+  x=rx*c+rz*s;z=-rx*s+rz*c;
+ }else{x=Math.max(-FIELD.halfWidth,Math.min(FIELD.halfWidth,x));z=Math.max(-FIELD.halfDepth,Math.min(FIELD.halfDepth,z));}
  const candidates=[{x,z}];
  for(const o of obstacles){const left=o.x-o.w/2-.72,right=o.x+o.w/2+.72,top=o.z-o.d/2-.72,bottom=o.z+o.d/2+.72;
   const px=Math.max(left,Math.min(right,x)),pz=Math.max(top,Math.min(bottom,z));
@@ -71,16 +78,15 @@ const reduced=matchMedia('(prefers-reduced-motion: reduce)').matches;
 const palette={arcane:'#d0e89e',fire:'#ffb16e',ice:'#9fe4ef'};
 function resize(){const r=canvas.getBoundingClientRect();w=r.width;h=r.height;const d=Math.min(devicePixelRatio||1,2);canvas.width=w*d;canvas.height=h*d;ctx.setTransform(d,0,0,d,0,0);fitView();}
 new ResizeObserver(resize).observe(canvas);
-// Fit the complete field and full-height mage between the HUD and spell controls.
+// The entire green canvas is the map. Reserve only enough room to keep the model on screen.
 function fitView(){
- const c=Math.abs(Math.cos(angle)),s=Math.abs(Math.sin(angle));
- const halfX=GROUND.halfWidth*c+GROUND.halfDepth*s;
- const halfZ=GROUND.halfWidth*s+GROUND.halfDepth*c;
- const top=220,bottom=h-220,available=Math.max(80,bottom-top);
- const upper=halfZ*.66+2.9*.86,lower=halfZ*.66+.5;
- scale=Math.min((w-36)/(2*halfX+2),available/(upper+lower));
- viewY=top+(available-(upper+lower)*scale)/2+upper*scale;
+ scale=Math.min(w/17,h/26);viewY=h*.52;
+ navigation={left:(-w/2)/scale+1.05,right:(w/2)/scale-1.05,top:(2.9*.86*scale+10-viewY)/(scale*.66),bottom:(h-.9*.66*scale-8-viewY)/(scale*.66)};
+ const position=nearestDestination(player.x,player.z);
+ if(position){player.x=position.x;player.z=position.z;}
+ if(route.length){const destination=nearestDestination(player.targetX,player.targetZ);player.targetX=destination.x;player.targetZ=destination.z;route=findRoute(destination.x,destination.z)||[];}
 }
+function groundPoint(px,py){const rx=(px-w/2)/scale,rz=(py-viewY)/(scale*.66),c=Math.cos(angle),s=Math.sin(angle);return [rx*c+rz*s,0,-rx*s+rz*c];}
 function project([x,y,z]){x-=camera.x;z-=camera.z;const c=Math.cos(angle),s=Math.sin(angle),rx=x*c-z*s,rz=x*s+z*c;return [w/2+rx*scale,viewY+(rz*.66-y*.86)*scale,rz*.86+y*.66];}
 let faces=[];
 function poly(vertices,color){const p=vertices.map(v=>project(meshOrigin?playerPoint(v):v));faces.push({p,color,layer:meshOrigin?1:0,depth:p.reduce((a,v)=>a+v[2],0)/p.length});}
@@ -92,8 +98,7 @@ function box(x,y,z,width,height,depth,colors){
  poly([[l,y,f],[l,y,b],[l,t,b],[l,t,f]],colors[2]);poly([[r,y,f],[r,y,b],[r,t,b],[r,t,f]],colors[2]);poly([[l,t,f],[r,t,f],[r,t,b],[l,t,b]],colors[0]);
 }
 function drawField(){
- const x=GROUND.halfWidth,z=GROUND.halfDepth;
- poly([[-x,0,-z],[x,0,-z],[x,0,z],[-x,0,z]],'#75a952');
+ poly([groundPoint(0,0),groundPoint(w,0),groundPoint(w,h),groundPoint(0,h)],'#75a952');
  // Sparse flat grass strokes give depth without adding obstacles or tile seams.
  for(let x=-5;x<6;x+=2)for(let z=-7;z<8;z+=2){
   const shift=Math.sin(x*17+z*31)*.6;

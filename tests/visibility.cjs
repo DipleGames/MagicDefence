@@ -28,15 +28,17 @@ for (const [width, height] of [[390, 844], [320, 580], [480, 1040]]) {
   run(`
     for(let i=0;i<32;i++){
       angle=targetAngle=i*Math.PI/16;
-      for(const x of [-FIELD.halfWidth,0,FIELD.halfWidth])
-      for(const z of [-FIELD.halfDepth,0,FIELD.halfDepth])
+      fitView();
+      for(const px of [0,w/2,w])
+      for(const py of [0,h/2,h])
       for(let facing=0;facing<4;facing++){
-        player.x=x;player.z=z;player.facing=facing*Math.PI/2;render(1000);
+        const ground=groundPoint(px,py),destination=nearestDestination(ground[0],ground[2]);
+        player.x=destination.x;player.z=destination.z;player.facing=facing*Math.PI/2;render(1000);
         let actorSeen=false;
         for(const face of faces){
           if(face.layer===1){
             actorSeen=true;
-            for(const [px,py] of face.p)if(px<0||px>w||py<210||py>h-200)throw Error('Character clipped or behind UI');
+            for(const [px,py] of face.p)if(px<0||px>w||py<0||py>h)throw Error('Character clipped: '+px+', '+py+' in '+w+'x'+h);
           }else if(actorSeen)throw Error('Ground covers character');
         }
         if(!actorSeen)throw Error('Character missing');
@@ -49,4 +51,4 @@ for (const [width, height] of [[390, 844], [320, 580], [480, 1040]]) {
   handlers.pointerdown({button: 2, clientX: point[0]+10, clientY: point[1]+20, preventDefault() {}});
   assert(run('Math.abs(player.targetX-2)<1e-9 && Math.abs(player.targetZ-3)<1e-9'), 'click matches resized/rotated ground');
 }
-console.log('PASS: character visibility and ground ordering at all edges, 32 angles, four facings, three viewport sizes; fixed camera and accurate clicks');
+console.log('PASS: character visibility and ground ordering at all edges, 32 angles, four facings, three viewport sizes; whole-canvas navigation, fixed camera and accurate clicks');
