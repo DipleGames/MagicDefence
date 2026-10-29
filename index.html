@@ -18,15 +18,21 @@
       <div class="wave">준비 단계</div>
     </header>
     <button id="sound" class="view" aria-label="시점 회전">↻</button>
-    <div class="bottom">
-      <div id="hint" class="hint">우클릭 또는 터치로 이동</div>
-      <div id="joystick" class="joystick" aria-label="드래그하여 이동"><div class="joystick-thumb"></div></div>
-      <div class="skills">
-        <button class="skill active" data-spell="arcane" aria-label="비전 파동"><span>✧</span><small>비전</small></button>
-        <button class="skill fire" data-spell="fire" aria-label="화염 폭발"><span>♨</span><small>화염</small></button>
-        <button class="skill ice" data-spell="ice" aria-label="서리 고리"><span>❄</span><small>서리</small></button>
+    <section class="champion-hud" aria-label="캐릭터 상태 및 스킬">
+      <div class="portrait"><svg viewBox="0 0 80 90" aria-hidden="true"><path fill="#253752" d="M0 90 13 65 37 56 65 65 80 90Z"/><path fill="#7288b7" d="m15 90 11-29 16-8 19 14 8 23Z"/><path fill="#d9b68f" d="M29 40h25v23L41 72 28 59Z"/><path fill="#a9b9d6" d="m28 57 13 7 13-7-8 20-12-6Z"/><path fill="#516d9e" d="m9 45 17-12L39 3l13 18 7 16 15 13-31 7Z"/><path fill="#8296bc" d="M39 3 30 37l14 9 8-25Z"/><path stroke="#d4b56b" stroke-width="5" d="m26 35 29 6"/><path stroke="#283448" stroke-width="3" d="M33 51h5m8 1h5"/></svg><span>1</span></div>
+      <div class="champion-info"><strong>비전 마법사</strong><span>✦ 마법 공격력 <b>24</b></span><span>➤ 이동 속도 <b>350</b></span></div>
+      <div class="ability-panel">
+        <div class="skills">
+          <button class="skill active" data-spell="arcane" title="Q · 비전 파동 | 마나 12 · 재사용 3초"><kbd>Q</kbd><span>✧</span><small>비전 파동</small><em class="cooldown"></em></button>
+          <button class="skill fire" data-spell="fire" title="W · 화염 폭발 | 마나 20 · 재사용 5초"><kbd>W</kbd><span>♨</span><small>화염 폭발</small><em class="cooldown"></em></button>
+          <button class="skill ice" data-spell="ice" title="E · 서리 고리 | 마나 25 · 재사용 7초"><kbd>E</kbd><span>❄</span><small>서리 고리</small><em class="cooldown"></em></button>
+          <button class="skill ultimate" data-spell="ultimate" title="R · 천상의 심판 | 마나 50 · 재사용 16초"><kbd>R</kbd><span>☄</span><small>천상의 심판</small><em class="cooldown"></em></button>
+        </div>
+        <div class="resource health-resource"><div></div><span>100 / 100</span></div>
+        <div class="resource mana-resource"><div id="mana-fill"></div><span id="mana-value">100 / 100</span></div>
       </div>
-    </div>
+      <div class="hud-meta"><span class="hud-gold">◆ <b>425</b></span><span>LEVEL <b>01</b></span><div class="hud-xp"><div></div></div><span class="connection">✦ 비전 계열</span></div>
+    </section>
     <div id="pause-panel" class="pause-panel" hidden><div class="pause-card"><small>MAGIC DEFENCE</small><h1>잠시 쉬어가기</h1><p>하늘빛 유적 · 준비 단계</p><button id="resume">계속하기 <span>▶</span></button></div></div>
   </main>
   <script src="src/game.js"></script>

@@ -11,7 +11,9 @@ let viewY=0;
 let navigation=null;
 let paused=false;
 let stageRect=null;
-let joystickDrag=null;
+let gameTime=0,mana=100;
+const abilities={arcane:{key:'Q',cost:12,cooldown:3},fire:{key:'W',cost:20,cooldown:5},ice:{key:'E',cost:25,cooldown:7},ultimate:{key:'R',cost:50,cooldown:16}};
+const readyAt={arcane:0,fire:0,ice:0,ultimate:0};
 const camera={x:0,z:0};
 const obstacles=[];
 let route=[];
@@ -78,14 +80,14 @@ function updateMovement(dt){
 }
 function playerPoint([x,y,z]){const c=Math.cos(player.facing),s=Math.sin(player.facing);return [player.x+x*c+z*s,y,player.z-x*s+z*c];}
 const reduced=matchMedia('(prefers-reduced-motion: reduce)').matches;
-const palette={arcane:'#d0e89e',fire:'#ffb16e',ice:'#9fe4ef'};
+const palette={arcane:'#d0e89e',fire:'#ffb16e',ice:'#9fe4ef',ultimate:'#d6afff'};
 function resize(){const r=canvas.getBoundingClientRect();w=r.width;h=r.height;const d=Math.min(devicePixelRatio||1,2);canvas.width=w*d;canvas.height=h*d;ctx.setTransform(d,0,0,d,0,0);fitView();}
 new ResizeObserver(resize).observe(canvas);
 // Navigation matches the visible stone platform, with enough space for the full character.
 function fitView(){
- scale=Math.min(w/17,h/26);viewY=h*.52;
- stageRect={left:w*.07,right:w*.93,top:h*.28,bottom:h+30};
- navigation={left:(stageRect.left-w/2)/scale+.8,right:(stageRect.right-w/2)/scale-.8,top:(stageRect.top+2.9*.86*scale+8-viewY)/(scale*.66),bottom:(h-.9*.66*scale-8-viewY)/(scale*.66)};
+ scale=Math.min(w/48,h/31);viewY=h*.48;
+ stageRect={left:w*.055,right:w*.945,top:Math.max(100,h*.14),bottom:h-158};
+ navigation={left:(stageRect.left-w/2)/scale+.8,right:(stageRect.right-w/2)/scale-.8,top:(stageRect.top+2.9*.86*scale+8-viewY)/(scale*.66),bottom:(stageRect.bottom-.9*.66*scale-8-viewY)/(scale*.66)};
  const position=nearestDestination(player.x,player.z);
  if(position){player.x=position.x;player.z=position.z;}
  if(route.length){const destination=nearestDestination(player.targetX,player.targetZ);player.targetX=destination.x;player.targetZ=destination.z;route=findRoute(destination.x,destination.z)||[];}
@@ -119,21 +121,21 @@ function drawScenery(){
  // Soft clouds and rays across the gap between the floating islands.
  for(const [x,y,r] of [[.06,.05,34],[.55,.035,45],[.97,.22,35],[.08,.65,40],[.95,.88,30]]){ctx.save();ctx.filter='blur(9px)';ellipse(w*x,h*y,r*1.6,r*.5,'#edfaff9c');ctx.restore();}
  screenPoly([[w*.38,0],[w*.48,0],[w*.96,h],[w*.64,h]],'#fff9dc18');
- island(w*.14,h*.105,w*.22);island(w*.82,h*.19,w*.15,true);
+ island(w*.065,h*.08,Math.min(90,w*.09));island(w*.94,h*.1,Math.min(70,w*.075),true);
  const {left:l,right:r,top:t,bottom:b}=stageRect;
  // Floating cliff silhouette and warm ochre border beneath the playing surface.
  screenPoly([[l-15,t+19],[l-20,b],[r+17,b],[r+19,t+28],[r-5,t-5],[l+10,t-6]],'#7587a0');
  screenPoly([[l-12,t+7],[l-16,b],[r+14,b],[r+15,t+10],[r-2,t-10],[l+3,t-11]],'#f3bc54');
  screenPoly([[l-7,t],[l-9,b],[r+7,b],[r+8,t+5],[r-8,t-7],[l+9,t-7]],'#ffda7e');
- for(let i=0;i<16;i++){const side=i%2?l-10:r+9,y=t+28+i*(h-t)/16;ellipse(side,y,4+i%3,3,i%3?'#efb745':'#ffdf80');if(i%4===0)flower(side,y+6,i%3?'#f3959e':'#a4d4f5');}
+ for(let i=0;i<16;i++){const side=i%2?l-10:r+9,y=t+18+i*Math.max(0,b-t-36)/16;ellipse(side,y,4+i%3,3,i%3?'#efb745':'#ffdf80');if(i%4===0)flower(side,y+6,i%3?'#f3959e':'#a4d4f5');}
  // Small rocks at the entrance to the arena.
  for(let i=0;i<5;i++){const x=l+12+i*19,y=t-3;screenPoly([[x-9,y],[x-5,y-14],[x+6,y-16],[x+12,y-6],[x+6,y+4]],i%2?'#858f9e':'#969da8');}
 }
 function drawField(){
  const {left:l,right:r,top:t,bottom:b}=stageRect;
- const floor=(points,color)=>poly(points.map(([x,y])=>groundPoint(x,y)),color);
+ const floor=(points,color)=>poly(points.map(([x,y])=>groundPoint(Math.max(l,Math.min(r,x)),Math.max(t,Math.min(b,y)))),color);
  floor([[l,t],[r,t],[r,b],[l,b]],'#b3a58a');
- const columns=3,tileW=(r-l)/columns,tileH=Math.max(68,w*.22),colors=['#c6b99a','#cdbf9d','#b8b19a','#d4c3a0','#bfb196','#c3b599'];
+ const columns=Math.max(4,Math.round(w/145)),tileW=(r-l)/columns,tileH=Math.max(52,Math.min(100,h*.13)),colors=['#c6b99a','#cdbf9d','#b8b19a','#d4c3a0','#bfb196','#c3b599'];
  for(let row=0;t+row*tileH<b;row++)for(let col=0;col<columns;col++){
   const x=l+col*tileW,y=t+row*tileH,skew=(row%2?1:-1)*5;
   floor([[x+1,y+1],[x+tileW-1,y+1],[x+tileW-1,y+tileH-1],[x+1,y+tileH-1]],colors[(row*7+col*3)%colors.length]);
@@ -142,14 +144,14 @@ function drawField(){
   if((row+col)%3===0){const px=x+tileW*.8,py=y+tileH*.25;floor([[px,py],[px+8,py+5],[px+4,py+12],[px+6,py+5]],'#a69b85');}
  }
  // Riveted repair plates break up the large sandstone slabs.
- for(const [u,v] of [[.55,.22],[.07,.75]]){const x=l+(r-l)*u,y=t+(b-t)*v,tw=(r-l)*.4,th=tileH*1.2;
+ for(const [u,v] of [[.55,.22],[.07,.75]]){const x=l+(r-l)*u,y=t+(b-t)*v,tw=tileW*1.4,th=tileH*1.2;
   floor([[x,y],[Math.min(r-2,x+tw),y],[Math.min(r-2,x+tw),y+th],[x,y+th]],'#cda986');
   for(const dx of [4,Math.min(tw,r-x-2)-4])for(const dy of [4,th-4])floor([[x+dx-1,y+dy-1],[x+dx+2,y+dy-1],[x+dx+2,y+dy+2],[x+dx-1,y+dy+2]],'#ead4a5');
  }
 }
 function render(ms){now=ms/1000;const dt=previousFrame===null?0:Math.min(Math.max(now-previousFrame,0),.1);previousFrame=now;
- if(!paused){updateJoystick();updateMovement(dt);angle+=(targetAngle-angle)*(1-Math.exp(-7*dt));}
- fitView();ctx.clearRect(0,0,w,h);drawScenery();faces=[];
+ if(!paused){gameTime+=dt;mana=Math.min(100,mana+7*dt);updateMovement(dt);angle+=(targetAngle-angle)*(1-Math.exp(-7*dt));}
+ updateAbilityHud();fitView();ctx.clearRect(0,0,w,h);drawScenery();faces=[];
 drawField();
 // Mage: boots, six-sided robe, sleeves, head, broad brim, pointed hat, staff.
 meshOrigin=player;
@@ -174,11 +176,26 @@ faces.sort((a,b)=>a.layer-b.layer||(a.layer===0?0:a.depth-b.depth));let shadowDr
 if(Math.hypot(player.targetX-player.x,player.targetZ-player.z)>.05){lineGround(.3,'#e4efba',2,0,{x:player.targetX,z:player.targetZ});}
 lineGround(.66,'#72d4fcaa',2);lineGround(.8,'#345a7555',1);
 const glow=project(playerPoint([.73,2.3,.13]));const gradient=ctx.createRadialGradient(glow[0],glow[1],0,glow[0],glow[1],34);gradient.addColorStop(0,'#cff5bf60');gradient.addColorStop(1,'#cff5bf00');ctx.fillStyle=gradient;ctx.fillRect(glow[0]-34,glow[1]-34,68,68);
-const age=now-pulse;if(age<1.3){ctx.globalAlpha=1-age/1.3;lineGround(.6+age*3.8,palette[spell],3);lineGround(.4+age*3,palette[spell],1);ctx.globalAlpha=1;}
+const age=gameTime-pulse;if(age<1.3){const color=palette[spell];ctx.globalAlpha=1-age/1.3;
+ const radius=spell==='ultimate'?1+age*7:.6+age*3.8;
+ lineGround(radius,color,spell==='ultimate'?5:3);lineGround(radius*.78,color,1);
+ if(spell==='fire'){for(let i=0;i<8;i++){const a=i*Math.PI/4,p=project([player.x+Math.cos(a)*radius,age*.8,player.z+Math.sin(a)*radius]);ellipse(p[0],p[1],scale*.15,scale*.28,color);}}
+ if(spell==='ice'){for(let i=0;i<10;i++){const a=i*Math.PI/5,p=project([player.x+Math.cos(a)*radius,.2,player.z+Math.sin(a)*radius]);screenPoly([[p[0]-4,p[1]],[p[0],p[1]-scale*.55],[p[0]+4,p[1]],[p[0],p[1]+5]],color);}}
+ if(spell==='ultimate'){const p=project([player.x,0,player.z]),beam=ctx.createLinearGradient(p[0]-30,0,p[0]+30,0);beam.addColorStop(0,'#d6afff00');beam.addColorStop(.5,'#f8e4ff99');beam.addColorStop(1,'#d6afff00');ctx.fillStyle=beam;ctx.fillRect(p[0]-30,0,60,p[1]);}
+ ctx.globalAlpha=1;}
 for(let i=0;i<16;i++){const t=reduced?i:now*.18+i*1.87,x=Math.sin(i*23.4)*7,z=Math.cos(i*17.3)*12,y=.4+(t%2),p=project([x,y,z]);ctx.globalAlpha=.25+.35*Math.sin(t*3)**2;ctx.fillStyle='#d3edac';ctx.beginPath();ctx.arc(p[0],p[1],1.2,0,Math.PI*2);ctx.fill();}ctx.globalAlpha=1;
 const bar=project([player.x,3.1,player.z]);ctx.fillStyle='#384c44';ctx.fillRect(bar[0]-19,bar[1]-5,38,7);ctx.fillStyle='#63dd64';ctx.fillRect(bar[0]-17,bar[1]-3,34,3);ctx.fillStyle='#247d3b';for(let i=1;i<5;i++)ctx.fillRect(bar[0]-17+i*6.8,bar[1]-3,1,3);
  requestAnimationFrame(render);}
-function cast(){if(paused)return;pulse=now;document.querySelector('#hint').textContent={arcane:'비전의 힘이 유적을 감쌉니다',fire:'화염의 힘이 깨어납니다',ice:'차가운 마력이 퍼져나갑니다'}[spell];}
+function updateAbilityHud(){
+ document.querySelector('#mana-fill').style.width=`${mana}%`;
+ document.querySelector('#mana-value').textContent=`${Math.floor(mana)} / 100`;
+ document.querySelectorAll('.skill').forEach(button=>{const id=button.dataset.spell,remaining=Math.max(0,readyAt[id]-gameTime);button.classList.toggle('on-cooldown',remaining>0);button.classList.toggle('no-mana',mana<abilities[id].cost);button.setAttribute('aria-disabled',String(paused||remaining>0||mana<abilities[id].cost));button.querySelector('.cooldown').textContent=remaining>0?Math.ceil(remaining):'';});
+}
+function cast(id=spell){
+ const ability=abilities[id];if(paused||!ability||readyAt[id]>gameTime||mana<ability.cost)return false;
+ spell=id;mana-=ability.cost;readyAt[id]=gameTime+ability.cooldown;pulse=gameTime;
+ document.querySelectorAll('.skill').forEach(button=>button.classList.toggle('active',button.dataset.spell===id));updateAbilityHud();return true;
+}
 function moveToPointer(event){
  if(paused)return;
  const rect=canvas.getBoundingClientRect(),rx=(event.clientX-rect.left-w/2)/scale,rz=(event.clientY-rect.top-viewY)/(scale*.66);
@@ -186,7 +203,6 @@ function moveToPointer(event){
  const destination=nearestDestination(camera.x+rx*c+rz*s,camera.z-rx*s+rz*c);if(!destination)return;
  const {x,z}=destination,path=findRoute(x,z);if(!path)return;
  player.targetX=x;player.targetZ=z;route=path;
- document.querySelector('#hint').textContent='지정한 위치로 이동합니다';
 }
 let lastMoveCommand=-Infinity;
 canvas.addEventListener('pointermove',event=>{if(event.buttons&2&&event.timeStamp-lastMoveCommand>=70){lastMoveCommand=event.timeStamp;moveToPointer(event);}});
@@ -195,15 +211,16 @@ canvas.addEventListener('pointerdown',event=>{
  if(event.button===2||event.pointerType==='touch'){event.preventDefault();moveToPointer(event);}
  else if(event.button===0)cast();
 });
-document.querySelectorAll('.skill').forEach(button=>button.addEventListener('click',()=>{spell=button.dataset.spell;document.querySelectorAll('.skill').forEach(b=>b.classList.toggle('active',b===button));cast();}));
+document.querySelectorAll('.skill').forEach(button=>button.addEventListener('click',()=>cast(button.dataset.spell)));
 document.querySelector('#sound').addEventListener('click',()=>{if(!paused)targetAngle+=Math.PI/4;});
-function setPaused(value){paused=value;joystickDrag=null;document.querySelector('#pause-panel').hidden=!value;document.querySelector('#pause').setAttribute('aria-label',value?'계속하기':'일시 정지');joystickThumb.style.transform='';}
-const joystick=document.querySelector('#joystick'),joystickThumb=document.querySelector('.joystick-thumb');
-function readJoystick(event){const r=joystick.getBoundingClientRect(),dx=event.clientX-r.left-r.width/2,dy=event.clientY-r.top-r.height/2,length=Math.hypot(dx,dy),factor=length>34?34/length:1;joystickDrag={x:dx*factor,y:dy*factor};joystickThumb.style.transform=`translate(${joystickDrag.x}px,${joystickDrag.y}px)`;}
-function updateJoystick(){if(!joystickDrag)return;if(Math.hypot(joystickDrag.x,joystickDrag.y)<4){route=[];return;}const foot=project([player.x,0,player.z]),p=groundPoint(foot[0]+joystickDrag.x*2,foot[1]+joystickDrag.y*2),target=nearestDestination(p[0],p[2]);if(target){player.targetX=target.x;player.targetZ=target.z;route=findRoute(target.x,target.z)||[];}}
-joystick.addEventListener('pointerdown',event=>{if(paused)return;event.preventDefault();joystick.setPointerCapture(event.pointerId);readJoystick(event);});
-joystick.addEventListener('pointermove',event=>{if(joystickDrag)readJoystick(event);});
-for(const type of ['pointerup','pointercancel','lostpointercapture'])joystick.addEventListener(type,()=>{if(joystickDrag)route=[];joystickDrag=null;joystickThumb.style.transform='';});
+function setPaused(value){paused=value;document.querySelector('#pause-panel').hidden=!value;document.querySelector('#pause').setAttribute('aria-label',value?'계속하기':'일시 정지');updateAbilityHud();}
 document.querySelector('#pause').addEventListener('click',()=>setPaused(!paused));
 document.querySelector('#resume').addEventListener('click',()=>setPaused(false));
+document.addEventListener('keydown',event=>{
+ if(event.repeat||event.ctrlKey||event.altKey||event.metaKey||event.isComposing)return;
+ if(event.target?.closest?.('input,textarea,select,[contenteditable="true"]'))return;
+ if(event.code==='Escape'){event.preventDefault();setPaused(!paused);return;}
+ const id={KeyQ:'arcane',KeyW:'fire',KeyE:'ice',KeyR:'ultimate'}[event.code];
+ if(id){event.preventDefault();cast(id);}
+});
 requestAnimationFrame(render);

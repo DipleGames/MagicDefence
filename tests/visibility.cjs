@@ -2,7 +2,7 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 const assert = require('node:assert/strict');
 const source = fs.readFileSync(require('node:path').join(__dirname, '../src/game.js'), 'utf8');
-for (const [width, height] of [[390, 844], [320, 580], [480, 1040]]) {
+for (const [width, height] of [[1280,720], [1920,1080], [2560,1440], [800,600]]) {
   const handlers = {};
   const ctx = new Proxy({
     createLinearGradient: () => ({addColorStop() {}}),
@@ -15,7 +15,8 @@ for (const [width, height] of [[390, 844], [320, 580], [480, 1040]]) {
   };
   const context = vm.createContext({
     document: {
-      querySelector: selector => selector === '#world' ? canvas : {addEventListener() {}},
+      querySelector: selector => selector === '#world' ? canvas : {addEventListener() {},style:{},setAttribute() {}},
+      addEventListener() {},
       querySelectorAll: () => [],
     },
     matchMedia: () => ({matches: false}),
@@ -39,7 +40,10 @@ for (const [width, height] of [[390, 844], [320, 580], [480, 1040]]) {
           if(face.layer===1){
             actorSeen=true;
             for(const [px,py] of face.p)if(px<0||px>w||py<0||py>h)throw Error('Character clipped: '+px+', '+py+' in '+w+'x'+h);
-          }else if(actorSeen)throw Error('Ground covers character');
+          }else {
+            if(actorSeen)throw Error('Ground covers character');
+            for(const [px,py] of face.p)if(px<stageRect.left-1e-6||px>stageRect.right+1e-6||py<stageRect.top-1e-6||py>stageRect.bottom+1e-6)throw Error('Tiles extend beyond visible platform');
+          }
         }
         if(!actorSeen)throw Error('Character missing');
       }
@@ -51,4 +55,4 @@ for (const [width, height] of [[390, 844], [320, 580], [480, 1040]]) {
   handlers.pointerdown({button: 2, clientX: point[0]+10, clientY: point[1]+20, preventDefault() {}});
   assert(run('Math.abs(player.targetX-2)<1e-9 && Math.abs(player.targetZ-3)<1e-9'), 'click matches resized/rotated ground');
 }
-console.log('PASS: character visibility and ground ordering at all edges, 32 angles, four facings, three viewport sizes; whole-canvas navigation, fixed camera and accurate clicks');
+console.log('PASS: character visibility and ground ordering at all edges, 32 angles, four facings, four PC viewport sizes; visible-platform navigation, fixed camera and accurate clicks');
