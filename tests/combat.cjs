@@ -26,9 +26,9 @@ assert.equal(stagePlan(10).types[0],'guardian');assert.equal(stagePlan(20).types
  const g=new DefenceGame();g.startStage(1);g.damageHero(21);assert.equal(g.hero.hp,140);g.damageHero(100);assert.equal(g.hero.hp,140,'hit grace prevents burst stacking');advance(g,.5);g.damageHero(1e6);assert.equal(g.phase,'defeat');const time=g.time;advance(g,10);assert.equal(g.time,time,'defeat freezes simulation');assert.equal(g.stage,1);
 }
 {
- const g=new DefenceGame();g.startStage(10);g.enemies.filter(e=>!e.boss).forEach(e=>g.damageEnemy(e,1e6));const boss=g.enemies.find(e=>e.boss);boss.nextAttack=100;boss.activeAt=100;
- g.addHazard(boss,{x:0,z:0},2,.5);advance(g,.4);assert.equal(g.hero.hp,160,'telegraph does no early damage');g.hero.x=6;advance(g,.2);assert.equal(g.hero.hp,160,'moving avoids hazard');
- g.addHazard(boss,g.hero,2,.5);advance(g,.6);assert(g.hero.hp<160,'standing in warning takes damage');
+ const g=new DefenceGame();g.startStage(10);g.enemies.filter(e=>!e.boss).forEach(e=>g.damageEnemy(e,1e6));const boss=g.enemies.find(e=>e.boss);boss.nextAttack=100;boss.activeAt=100;const startingHp=g.hero.hp;
+ g.addHazard(boss,{x:0,z:0},2,.5);advance(g,.4);assert.equal(g.hero.hp,startingHp,'telegraph does no early damage');g.hero.x=6;advance(g,.2);assert.equal(g.hero.hp,startingHp,'moving avoids hazard');
+ g.addHazard(boss,g.hero,2,.5);advance(g,.6);assert(g.hero.hp<startingHp,'standing in warning takes damage');
 }
 {
  const g=new DefenceGame();g.startStage(1);g.enemies=[{...g.enemies[0],x:3,z:0,hp:10,maxHp:10,activeAt:0,nextAttack:100,speed:0}];g.nextAttackAt=100;g.shoot(g.hero,g.enemies[0],20,false,100);g.update(.1);assert.equal(g.kills,1,'swept projectile hit does not tunnel');assert.equal(g.phase,'intermission');
@@ -45,3 +45,16 @@ assert.equal(stagePlan(10).types[0],'guardian');assert.equal(stagePlan(20).types
 }
 for(let level=1;level<100;level++){assert(xpRequired(level+1)>xpRequired(level));assert(stats(level+1).maxHp>stats(level).maxHp);assert(stats(level+1).power>stats(level).power);}
 console.log('PASS: 100 stage plans, boss cadence/rotation, complete-stage transitions, XP and multi-level growth, rewards once, real auto-attack clear, skills/slow, telegraphs, swept hits, death/restart');
+{
+ assert(stagePlan(2).types.includes('thrower'),'projectile enemy appears in stage 2');assert(!stagePlan(1).types.includes('thrower'));assert(stagePlan(10).types.includes('thrower'),'boss escorts apply ranged pressure');
+ const g=new DefenceGame();g.startStage(2);const enemy=g.enemies.find(e=>e.type==='thrower');g.enemies=[enemy];Object.assign(enemy,{x:8,z:0,activeAt:0,nextAttack:0});g.nextAttackAt=100;
+ g.update(.02);assert(enemy.windup,'thrower telegraphs before throwing');advance(g,.5);assert.equal(g.projectiles.length,0,'no projectile before windup finishes');advance(g,.14);const rock=g.projectiles.find(p=>p.kind==='rock');assert(rock);assert.equal(rock.targetX,0);assert.equal(rock.targetZ,0);g.hero.z=5;advance(g,1.5);assert.equal(g.hero.hp,160,'moving out of locked landing position dodges rock');
+}
+{
+ const g=new DefenceGame();g.startStage(2);const enemy=g.enemies.find(e=>e.type==='thrower');g.enemies=[enemy];Object.assign(enemy,{x:3,z:0,activeAt:100,nextAttack:100});g.nextAttackAt=100;g.lobRock(enemy,g.hero);advance(g,.4);assert.equal(g.hero.hp,160,'airborne rocks cause no early damage');advance(g,.3);assert(g.hero.hp<160,'rock damages player on landing');const hp=g.hero.hp;advance(g,.8);assert.equal(g.hero.hp,hp,'impact damage applied once');
+}
+{
+ const g=new DefenceGame();g.startStage(5);const enemy=g.enemies.find(e=>e.type==='wisp');g.enemies=[enemy];Object.assign(enemy,{x:7,z:0,activeAt:0,nextAttack:0});g.nextAttackAt=100;g.update(.02);assert(enemy.windup);advance(g,.5);assert.equal(g.projectiles.filter(p=>p.hostile).length,2,'wisp fires a two-shot spread');
+ Object.assign(enemy,{x:2,z:0,nextAttack:100,windup:null});g.update(.1);assert(enemy.x>2,'ranged enemy retreats from close player');
+}
+console.log('PASS: stage-2 throwers, windup, locked landing, dodgeable arc, impact once, wisp spread and ranged retreat');
