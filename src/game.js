@@ -5,9 +5,11 @@ let w=0,h=0,scale=1,angle=0,targetAngle=0,spell='arcane',pulse=-10,now=0;
 const player={x:0,z:0,targetX:0,targetZ:0,facing:0};
 let previousFrame=null,meshOrigin=null;
 const MOVE_SPEED=3.5;
-const obstacles=[{x:-2.5,z:-3,w:2,d:1.5},{x:2.5,z:3,w:2,d:1.5},{x:3,z:-5.5,w:1.5,d:1.5},{x:-3,z:5.5,w:1.5,d:1.5}];
+const FIELD={halfWidth:18,halfDepth:28};
+const camera={x:0,z:0};
+const obstacles=[];
 let route=[];
-function walkable(x,z){return Math.abs(x)<=5 && Math.abs(z)<=8 && !obstacles.some(o=>Math.abs(x-o.x)<o.w/2+.7 && Math.abs(z-o.z)<o.d/2+.7);}
+function walkable(x,z){return Math.abs(x)<=FIELD.halfWidth && Math.abs(z)<=FIELD.halfDepth && !obstacles.some(o=>Math.abs(x-o.x)<o.w/2+.7 && Math.abs(z-o.z)<o.d/2+.7);}
 // Visibility graph: exact straight segments and obstacle corners, without grid snapping.
 function clearSegment(a,b){
  if(!walkable(a.x,a.z)||!walkable(b.x,b.z))return false;
@@ -42,7 +44,7 @@ function findRoute(x,z){
  const path=[];for(let i=1;i!==0;i=previous[i])path.push(nodes[i]);return path.reverse();
 }
 function nearestDestination(x,z){
- x=Math.max(-5,Math.min(5,x));z=Math.max(-8,Math.min(8,z));
+ x=Math.max(-FIELD.halfWidth,Math.min(FIELD.halfWidth,x));z=Math.max(-FIELD.halfDepth,Math.min(FIELD.halfDepth,z));
  const candidates=[{x,z}];
  for(const o of obstacles){const left=o.x-o.w/2-.72,right=o.x+o.w/2+.72,top=o.z-o.d/2-.72,bottom=o.z+o.d/2+.72;
   const px=Math.max(left,Math.min(right,x)),pz=Math.max(top,Math.min(bottom,z));
@@ -65,9 +67,9 @@ function updateMovement(dt){
 function playerPoint([x,y,z]){const c=Math.cos(player.facing),s=Math.sin(player.facing);return [player.x+x*c+z*s,y,player.z-x*s+z*c];}
 const reduced=matchMedia('(prefers-reduced-motion: reduce)').matches;
 const palette={arcane:'#d0e89e',fire:'#ffb16e',ice:'#9fe4ef'};
-function resize(){const r=canvas.getBoundingClientRect();w=r.width;h=r.height;const d=Math.min(devicePixelRatio||1,2);canvas.width=w*d;canvas.height=h*d;ctx.setTransform(d,0,0,d,0,0);scale=w/17;}
+function resize(){const r=canvas.getBoundingClientRect();w=r.width;h=r.height;const d=Math.min(devicePixelRatio||1,2);canvas.width=w*d;canvas.height=h*d;ctx.setTransform(d,0,0,d,0,0);scale=w/21;}
 new ResizeObserver(resize).observe(canvas);
-function project([x,y,z]){const c=Math.cos(angle),s=Math.sin(angle),rx=x*c-z*s,rz=x*s+z*c;return [w/2+rx*scale,h*.52+(rz*.66-y*.86)*scale,rz*.86+y*.66];}
+function project([x,y,z]){x-=camera.x;z-=camera.z;const c=Math.cos(angle),s=Math.sin(angle),rx=x*c-z*s,rz=x*s+z*c;return [w/2+rx*scale,h*.52+(rz*.66-y*.86)*scale,rz*.86+y*.66];}
 let faces=[];
 function poly(vertices,color){const p=vertices.map(v=>project(meshOrigin?playerPoint(v):v));faces.push({p,color,depth:p.reduce((a,v)=>a+v[2],0)/p.length});}
 function ring(x,y,z,r1,r2,height,n,colors,rotation=0){for(let i=0;i<n;i++){const a=rotation+i*Math.PI*2/n,b=rotation+(i+1)*Math.PI*2/n;poly([[x+Math.cos(a)*r1,y,z+Math.sin(a)*r1],[x+Math.cos(b)*r1,y,z+Math.sin(b)*r1],[x+Math.cos(b)*r2,y+height,z+Math.sin(b)*r2],[x+Math.cos(a)*r2,y+height,z+Math.sin(a)*r2]],colors[i%colors.length]);}if(r2>0)poly(Array.from({length:n},(_,i)=>[x+Math.cos(rotation+i*Math.PI*2/n)*r2,y+height,z+Math.sin(rotation+i*Math.PI*2/n)*r2]),colors[0]);}
@@ -77,23 +79,16 @@ function box(x,y,z,width,height,depth,colors){
  poly([[l,y,f],[r,y,f],[r,t,f],[l,t,f]],colors[1]);poly([[l,y,b],[r,y,b],[r,t,b],[l,t,b]],colors[1]);
  poly([[l,y,f],[l,y,b],[l,t,b],[l,t,f]],colors[2]);poly([[r,y,f],[r,y,b],[r,t,b],[r,t,f]],colors[2]);poly([[l,t,f],[r,t,f],[r,t,b],[l,t,b]],colors[0]);
 }
-function drawArena(){
- box(0,-.55,0,12.8,.5,20.8,['#797f9d','#41475e','#535974']);
- for(let x=-6;x<6;x++)for(let z=-10;z<10;z++){const color=['#a5adbd','#adb5c3','#9da7b9'][(x+z+30)%3];box(x+.5,-.05,z+.5,.96,.06,.96,[color,'#7d879d','#929cb0']);}
- // Crenellated perimeter and corner towers enclose the room.
- for(let z=-10;z<=10;z+=2)for(const x of [-6.3,6.3]){box(x,0,z,.65,.7,1.95,['#b7c2d0','#76869e','#8595ae']);box(x,.7,z,.85,.25,.6,['#d3d8db','#99a7ba','#aab6c5']);}
- for(let x=-5;x<=5;x++)for(const z of [-10,10]){if(Math.abs(x)<1.5)continue;box(x,0,z,.98,.7,.65,['#b7c2d0','#76869e','#8595ae']);}
- for(const x of [-6,6])for(const z of [-9.5,9.5]){box(x,0,z,1,1.6,1,['#abb9cb','#6c809a','#8c9bb3']);ring(x,1.6,z,.75,0,.65,4,['#6e8dc0','#8aa6d5','#5978a6']);}
- for(const o of obstacles){box(o.x,0,o.z,o.w,.85,o.d,['#bcc6d0','#7b8da6','#9aaac0']);box(o.x,.85,o.z,o.w+.12,.15,o.d+.12,['#d1d6db','#92a1b6','#aebbc9']);}
- // Exit portal and entrance steps.
- box(0,0,-9.6,2.7,.12,1.2,['#c8bf9a','#92886d','#a9a084']);
- for(const x of [-1.25,1.25])box(x,0,-9.7,.4,2,.5,['#c0cbd7','#8195af','#9eafc5']);
- box(0,1.8,-9.7,2.9,.4,.65,['#d8d7c2','#899db9','#b0bdcf']);
- poly([[-1,0,-9.7],[1,0,-9.7],[1,1.8,-9.7],[-1,1.8,-9.7]],'#73cbd0');
- box(0,-.15,10,2.8,.25,1.2,['#b3bdd0','#6c7d96','#8d9eb6']);
+function drawField(){
+ poly([[-20,0,-30],[20,0,-30],[20,0,30],[-20,0,30]],'#75a952');
+ // Sparse flat grass strokes give depth without adding obstacles or tile seams.
+ for(let x=-19;x<20;x+=2)for(let z=-29;z<30;z+=3){
+  const shift=Math.sin(x*17+z*31)*.6;
+  poly([[x+shift,.005,z],[x+shift+.07,.005,z-.23],[x+shift+.13,.005,z+.1]],'#7eaf5a');
+ }
 }
-function render(ms){now=ms/1000;const dt=previousFrame===null?0:Math.min(Math.max(now-previousFrame,0),.1);previousFrame=now;updateMovement(dt);angle+=(targetAngle-angle)*.035;ctx.clearRect(0,0,w,h);const bg=ctx.createLinearGradient(0,0,0,h);bg.addColorStop(0,'#263951');bg.addColorStop(.5,'#566d7f');bg.addColorStop(1,'#304457');ctx.fillStyle=bg;ctx.fillRect(0,0,w,h);faces=[];
-drawArena();
+function render(ms){now=ms/1000;const dt=previousFrame===null?0:Math.min(Math.max(now-previousFrame,0),.1);previousFrame=now;updateMovement(dt);const follow=1-Math.exp(-7*dt);camera.x+=(player.x-camera.x)*follow;camera.z+=(player.z-camera.z)*follow;angle+=(targetAngle-angle)*.035;ctx.clearRect(0,0,w,h);const bg=ctx.createLinearGradient(0,0,0,h);bg.addColorStop(0,'#6f9f4e');bg.addColorStop(.5,'#75a952');bg.addColorStop(1,'#75a952');ctx.fillStyle=bg;ctx.fillRect(0,0,w,h);faces=[];
+drawField();
 // Mage: boots, six-sided robe, sleeves, head, broad brim, pointed hat, staff.
 meshOrigin=player;
 const stride=!reduced&&route.length?Math.sin(walkCycle)*.12:0;
@@ -119,12 +114,12 @@ for(let i=0;i<8;i++){const a=i*Math.PI/4,p=project([player.x+Math.cos(a)*1.86,.0
 const glow=project(playerPoint([.73,2.3,.13]));const gradient=ctx.createRadialGradient(glow[0],glow[1],0,glow[0],glow[1],34);gradient.addColorStop(0,'#cff5bf60');gradient.addColorStop(1,'#cff5bf00');ctx.fillStyle=gradient;ctx.fillRect(glow[0]-34,glow[1]-34,68,68);
 const age=now-pulse;if(age<1.3){ctx.globalAlpha=1-age/1.3;lineGround(.6+age*3.8,palette[spell],3);lineGround(.4+age*3,palette[spell],1);ctx.globalAlpha=1;}
 for(let i=0;i<16;i++){const t=reduced?i:now*.18+i*1.87,x=Math.sin(i*23.4)*7,z=Math.cos(i*17.3)*12,y=.4+(t%2),p=project([x,y,z]);ctx.globalAlpha=.25+.35*Math.sin(t*3)**2;ctx.fillStyle='#d3edac';ctx.beginPath();ctx.arc(p[0],p[1],1.2,0,Math.PI*2);ctx.fill();}ctx.globalAlpha=1;
-const vignette=ctx.createRadialGradient(w/2,h*.48,w*.15,w/2,h*.5,h*.7);vignette.addColorStop(0,'#081f2300');vignette.addColorStop(1,'#081f23b3');ctx.fillStyle=vignette;ctx.fillRect(0,0,w,h);requestAnimationFrame(render);}
-function cast(){pulse=now;document.querySelector('#hint').textContent={arcane:'비전의 힘이 성채를 감쌉니다',fire:'화염의 힘이 깨어납니다',ice:'차가운 마력이 퍼져나갑니다'}[spell];}
+const vignette=ctx.createRadialGradient(w/2,h*.48,w*.15,w/2,h*.5,h*.7);vignette.addColorStop(0,'#081f2300');vignette.addColorStop(1,'#244e2028');ctx.fillStyle=vignette;ctx.fillRect(0,0,w,h);requestAnimationFrame(render);}
+function cast(){pulse=now;document.querySelector('#hint').textContent={arcane:'비전의 힘이 초원을 감쌉니다',fire:'화염의 힘이 깨어납니다',ice:'차가운 마력이 퍼져나갑니다'}[spell];}
 function moveToPointer(event){
  const rect=canvas.getBoundingClientRect(),rx=(event.clientX-rect.left-w/2)/scale,rz=(event.clientY-rect.top-h*.52)/(scale*.66);
  const c=Math.cos(angle),s=Math.sin(angle);
- const destination=nearestDestination(rx*c+rz*s,-rx*s+rz*c);if(!destination)return;
+ const destination=nearestDestination(camera.x+rx*c+rz*s,camera.z-rx*s+rz*c);if(!destination)return;
  const {x,z}=destination,path=findRoute(x,z);if(!path)return;
  player.targetX=x;player.targetZ=z;route=path;
  document.querySelector('#hint').textContent='지정한 위치로 이동합니다';
