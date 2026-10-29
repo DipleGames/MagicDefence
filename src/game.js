@@ -8,17 +8,59 @@ const MOVE_SPEED=3.5;
 const obstacles=[{x:-2.5,z:-3,w:2,d:1.5},{x:2.5,z:3,w:2,d:1.5},{x:3,z:-5.5,w:1.5,d:1.5},{x:-3,z:5.5,w:1.5,d:1.5}];
 let route=[];
 function walkable(x,z){return Math.abs(x)<=5 && Math.abs(z)<=8 && !obstacles.some(o=>Math.abs(x-o.x)<o.w/2+.7 && Math.abs(z-o.z)<o.d/2+.7);}
-function findRoute(x,z){
- const key=(x,z)=>`${x},${z}`,sx=Math.round(player.x*2),sz=Math.round(player.z*2),tx=Math.round(x*2),tz=Math.round(z*2);
- const queue=[[sx,sz]],seen=new Map([[key(sx,sz),null]]);let end=null;
- for(let i=0;i<queue.length;i++){const [cx,cz]=queue[i];if(cx===tx&&cz===tz){end=[cx,cz];break;}
- for(const [dx,dz] of [[1,0],[-1,0],[0,1],[0,-1]]){const nx=cx+dx,nz=cz+dz,k=key(nx,nz);if(!seen.has(k)&&walkable(nx/2,nz/2)){seen.set(k,[cx,cz]);queue.push([nx,nz]);}}}
- if(!end)return null;const path=[{x,z}];while(end){path.push({x:end[0]/2,z:end[1]/2});end=seen.get(key(...end));}path.pop();return path.reverse();
+// Visibility graph: exact straight segments and obstacle corners, without grid snapping.
+function clearSegment(a,b){
+ if(!walkable(a.x,a.z)||!walkable(b.x,b.z))return false;
+ for(const o of obstacles){
+  let enter=0,exit=1;
+  for(const [axis,half] of [['x',o.w/2+.7],['z',o.d/2+.7]]){
+   const delta=b[axis]-a[axis],low=o[axis]-half,high=o[axis]+half;
+   if(Math.abs(delta)<1e-10){if(a[axis]<=low||a[axis]>=high){enter=2;break;}}
+   else{let t1=(low-a[axis])/delta,t2=(high-a[axis])/delta;if(t1>t2)[t1,t2]=[t2,t1];enter=Math.max(enter,t1);exit=Math.min(exit,t2);}
+  }
+  if(enter<exit)return false;
+ }
+ return true;
 }
+function findRoute(x,z){
+ const start={x:player.x,z:player.z},goal={x,z};
+ if(clearSegment(start,goal))return [goal];
+ const nodes=[start,goal];
+ for(const o of obstacles)for(const sx of [-1,1])for(const sz of [-1,1]){
+  const point={x:o.x+sx*(o.w/2+.72),z:o.z+sz*(o.d/2+.72)};
+  if(walkable(point.x,point.z))nodes.push(point);
+ }
+ const cost=nodes.map(()=>Infinity),previous=[],visited=new Set();cost[0]=0;
+ while(true){let current=-1;for(let i=0;i<nodes.length;i++)if(!visited.has(i)&&(current<0||cost[i]<cost[current]))current=i;
+  if(current<0||!Number.isFinite(cost[current]))return null;
+  if(current===1)break;visited.add(current);
+  for(let i=0;i<nodes.length;i++){if(visited.has(i)||!clearSegment(nodes[current],nodes[i]))continue;
+   const distance=cost[current]+Math.hypot(nodes[i].x-nodes[current].x,nodes[i].z-nodes[current].z);
+   if(distance<cost[i]){cost[i]=distance;previous[i]=current;}
+  }
+ }
+ const path=[];for(let i=1;i!==0;i=previous[i])path.push(nodes[i]);return path.reverse();
+}
+function nearestDestination(x,z){
+ x=Math.max(-5,Math.min(5,x));z=Math.max(-8,Math.min(8,z));
+ const candidates=[{x,z}];
+ for(const o of obstacles){const left=o.x-o.w/2-.72,right=o.x+o.w/2+.72,top=o.z-o.d/2-.72,bottom=o.z+o.d/2+.72;
+  const px=Math.max(left,Math.min(right,x)),pz=Math.max(top,Math.min(bottom,z));
+  candidates.push({x:left,z:pz},{x:right,z:pz},{x:px,z:top},{x:px,z:bottom});
+ }
+ return candidates.filter(p=>walkable(p.x,p.z)).sort((a,b)=>Math.hypot(a.x-x,a.z-z)-Math.hypot(b.x-x,b.z-z))[0];
+}
+let walkCycle=0;
 function updateMovement(dt){
  let remaining=MOVE_SPEED*dt;
- while(route.length&&remaining>0){const next=route[0],dx=next.x-player.x,dz=next.z-player.z,distance=Math.hypot(dx,dz);if(distance>1e-6)player.facing=Math.atan2(dx,dz);
- if(distance<=remaining){player.x=next.x;player.z=next.z;remaining-=distance;route.shift();}else{player.x+=dx/distance*remaining;player.z+=dz/distance*remaining;remaining=0;}}
+ const startX=player.x,startZ=player.z;
+ while(route.length&&remaining>0){const next=route[0],dx=next.x-player.x,dz=next.z-player.z,distance=Math.hypot(dx,dz);
+  if(distance<=remaining){player.x=next.x;player.z=next.z;remaining-=distance;route.shift();}else{player.x+=dx/distance*remaining;player.z+=dz/distance*remaining;remaining=0;}}
+ const dx=player.x-startX,dz=player.z-startZ,moved=Math.hypot(dx,dz);
+ if(moved>1e-7){
+  const desired=Math.atan2(dx,dz),difference=Math.atan2(Math.sin(desired-player.facing),Math.cos(desired-player.facing));
+  player.facing+=difference*(1-Math.exp(-22*dt));walkCycle+=moved*9;
+ }
 }
 function playerPoint([x,y,z]){const c=Math.cos(player.facing),s=Math.sin(player.facing);return [player.x+x*c+z*s,y,player.z-x*s+z*c];}
 const reduced=matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -54,8 +96,9 @@ function render(ms){now=ms/1000;const dt=previousFrame===null?0:Math.min(Math.ma
 drawArena();
 // Mage: boots, six-sided robe, sleeves, head, broad brim, pointed hat, staff.
 meshOrigin=player;
-const bob=reduced?0:Math.sin(now*2)*.035;
-ring(-.24,.03,.15,.18,.17,.25,5,['#283541','#344454']);ring(.24,.03,.15,.18,.17,.25,5,['#283541','#344454']);
+const stride=!reduced&&route.length?Math.sin(walkCycle)*.12:0;
+const bob=reduced?0:route.length?Math.abs(Math.sin(walkCycle))*.055:Math.sin(now*2)*.035;
+ring(-.24,.03, .15+stride,.18,.17,.25,5,['#283541','#344454']);ring(.24,.03,.15-stride,.18,.17,.25,5,['#283541','#344454']);
 ring(0,.19,0,.64,.3,1.25,7,['#43527c','#4c6091','#6374a3','#566994','#3a486f','#344264','#43547e']);
 ring(0,.31,0,.65,.62,.09,7,['#c3ad70','#d7c181','#ab945d']);
 ring(0,1.13,0,.34,.34,.13,7,['#b89d63','#dcc381','#a78d57']);
@@ -81,13 +124,13 @@ function cast(){pulse=now;document.querySelector('#hint').textContent={arcane:'�
 function moveToPointer(event){
  const rect=canvas.getBoundingClientRect(),rx=(event.clientX-rect.left-w/2)/scale,rz=(event.clientY-rect.top-h*.52)/(scale*.66);
  const c=Math.cos(angle),s=Math.sin(angle);
- const x=Math.max(-5,Math.min(5,rx*c+rz*s)),z=Math.max(-8,Math.min(8,-rx*s+rz*c));
- if(!walkable(x,z)){document.querySelector('#hint').textContent='장애물이 없는 바닥을 선택하세요';return;}
- const path=findRoute(x,z);if(!path)return;
+ const destination=nearestDestination(rx*c+rz*s,-rx*s+rz*c);if(!destination)return;
+ const {x,z}=destination,path=findRoute(x,z);if(!path)return;
  player.targetX=x;player.targetZ=z;route=path;
- if(Math.hypot(x-player.x,z-player.z)>1e-6)player.facing=Math.atan2(x-player.x,z-player.z);
  document.querySelector('#hint').textContent='지정한 위치로 이동합니다';
 }
+let lastMoveCommand=-Infinity;
+canvas.addEventListener('pointermove',event=>{if(event.buttons&2&&event.timeStamp-lastMoveCommand>=70){lastMoveCommand=event.timeStamp;moveToPointer(event);}});
 canvas.addEventListener('contextmenu',event=>event.preventDefault());
 canvas.addEventListener('pointerdown',event=>{
  if(event.button===2||event.pointerType==='touch'){event.preventDefault();moveToPointer(event);}
