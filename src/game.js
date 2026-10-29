@@ -5,7 +5,9 @@ let w=0,h=0,scale=1,angle=0,targetAngle=0,spell='arcane',pulse=-10,now=0;
 const player={x:0,z:0,targetX:0,targetZ:0,facing:0};
 let previousFrame=null,meshOrigin=null;
 const MOVE_SPEED=3.5;
-const FIELD={halfWidth:18,halfDepth:28};
+const FIELD={halfWidth:5,halfDepth:7};
+const GROUND={halfWidth:6,halfDepth:8};
+let viewY=0;
 const camera={x:0,z:0};
 const obstacles=[];
 let route=[];
@@ -67,11 +69,21 @@ function updateMovement(dt){
 function playerPoint([x,y,z]){const c=Math.cos(player.facing),s=Math.sin(player.facing);return [player.x+x*c+z*s,y,player.z-x*s+z*c];}
 const reduced=matchMedia('(prefers-reduced-motion: reduce)').matches;
 const palette={arcane:'#d0e89e',fire:'#ffb16e',ice:'#9fe4ef'};
-function resize(){const r=canvas.getBoundingClientRect();w=r.width;h=r.height;const d=Math.min(devicePixelRatio||1,2);canvas.width=w*d;canvas.height=h*d;ctx.setTransform(d,0,0,d,0,0);scale=w/21;}
+function resize(){const r=canvas.getBoundingClientRect();w=r.width;h=r.height;const d=Math.min(devicePixelRatio||1,2);canvas.width=w*d;canvas.height=h*d;ctx.setTransform(d,0,0,d,0,0);fitView();}
 new ResizeObserver(resize).observe(canvas);
-function project([x,y,z]){x-=camera.x;z-=camera.z;const c=Math.cos(angle),s=Math.sin(angle),rx=x*c-z*s,rz=x*s+z*c;return [w/2+rx*scale,h*.52+(rz*.66-y*.86)*scale,rz*.86+y*.66];}
+// Fit the complete field and full-height mage between the HUD and spell controls.
+function fitView(){
+ const c=Math.abs(Math.cos(angle)),s=Math.abs(Math.sin(angle));
+ const halfX=GROUND.halfWidth*c+GROUND.halfDepth*s;
+ const halfZ=GROUND.halfWidth*s+GROUND.halfDepth*c;
+ const top=220,bottom=h-220,available=Math.max(80,bottom-top);
+ const upper=halfZ*.66+2.9*.86,lower=halfZ*.66+.5;
+ scale=Math.min((w-36)/(2*halfX+2),available/(upper+lower));
+ viewY=top+(available-(upper+lower)*scale)/2+upper*scale;
+}
+function project([x,y,z]){x-=camera.x;z-=camera.z;const c=Math.cos(angle),s=Math.sin(angle),rx=x*c-z*s,rz=x*s+z*c;return [w/2+rx*scale,viewY+(rz*.66-y*.86)*scale,rz*.86+y*.66];}
 let faces=[];
-function poly(vertices,color){const p=vertices.map(v=>project(meshOrigin?playerPoint(v):v));faces.push({p,color,depth:p.reduce((a,v)=>a+v[2],0)/p.length});}
+function poly(vertices,color){const p=vertices.map(v=>project(meshOrigin?playerPoint(v):v));faces.push({p,color,layer:meshOrigin?1:0,depth:p.reduce((a,v)=>a+v[2],0)/p.length});}
 function ring(x,y,z,r1,r2,height,n,colors,rotation=0){for(let i=0;i<n;i++){const a=rotation+i*Math.PI*2/n,b=rotation+(i+1)*Math.PI*2/n;poly([[x+Math.cos(a)*r1,y,z+Math.sin(a)*r1],[x+Math.cos(b)*r1,y,z+Math.sin(b)*r1],[x+Math.cos(b)*r2,y+height,z+Math.sin(b)*r2],[x+Math.cos(a)*r2,y+height,z+Math.sin(a)*r2]],colors[i%colors.length]);}if(r2>0)poly(Array.from({length:n},(_,i)=>[x+Math.cos(rotation+i*Math.PI*2/n)*r2,y+height,z+Math.sin(rotation+i*Math.PI*2/n)*r2]),colors[0]);}
 function lineGround(radius,color,width=1,offset=0,center=player){ctx.beginPath();for(let i=0;i<=90;i++){const a=i/90*Math.PI*2,p=project([center.x+Math.cos(a)*radius,.035,center.z+Math.sin(a)*radius]);if(i===0)ctx.moveTo(p[0],p[1]+offset);else ctx.lineTo(p[0],p[1]+offset);}ctx.strokeStyle=color;ctx.lineWidth=width;ctx.stroke();}
 function box(x,y,z,width,height,depth,colors){
@@ -80,14 +92,15 @@ function box(x,y,z,width,height,depth,colors){
  poly([[l,y,f],[l,y,b],[l,t,b],[l,t,f]],colors[2]);poly([[r,y,f],[r,y,b],[r,t,b],[r,t,f]],colors[2]);poly([[l,t,f],[r,t,f],[r,t,b],[l,t,b]],colors[0]);
 }
 function drawField(){
- poly([[-20,0,-30],[20,0,-30],[20,0,30],[-20,0,30]],'#75a952');
+ const x=GROUND.halfWidth,z=GROUND.halfDepth;
+ poly([[-x,0,-z],[x,0,-z],[x,0,z],[-x,0,z]],'#75a952');
  // Sparse flat grass strokes give depth without adding obstacles or tile seams.
- for(let x=-19;x<20;x+=2)for(let z=-29;z<30;z+=3){
+ for(let x=-5;x<6;x+=2)for(let z=-7;z<8;z+=2){
   const shift=Math.sin(x*17+z*31)*.6;
   poly([[x+shift,.005,z],[x+shift+.07,.005,z-.23],[x+shift+.13,.005,z+.1]],'#7eaf5a');
  }
 }
-function render(ms){now=ms/1000;const dt=previousFrame===null?0:Math.min(Math.max(now-previousFrame,0),.1);previousFrame=now;updateMovement(dt);const follow=1-Math.exp(-7*dt);camera.x+=(player.x-camera.x)*follow;camera.z+=(player.z-camera.z)*follow;angle+=(targetAngle-angle)*.035;ctx.clearRect(0,0,w,h);const bg=ctx.createLinearGradient(0,0,0,h);bg.addColorStop(0,'#6f9f4e');bg.addColorStop(.5,'#75a952');bg.addColorStop(1,'#75a952');ctx.fillStyle=bg;ctx.fillRect(0,0,w,h);faces=[];
+function render(ms){now=ms/1000;const dt=previousFrame===null?0:Math.min(Math.max(now-previousFrame,0),.1);previousFrame=now;updateMovement(dt);angle+=(targetAngle-angle)*(1-Math.exp(-7*dt));fitView();ctx.clearRect(0,0,w,h);const bg=ctx.createLinearGradient(0,0,0,h);bg.addColorStop(0,'#6f9f4e');bg.addColorStop(.5,'#75a952');bg.addColorStop(1,'#75a952');ctx.fillStyle=bg;ctx.fillRect(0,0,w,h);faces=[];
 drawField();
 // Mage: boots, six-sided robe, sleeves, head, broad brim, pointed hat, staff.
 meshOrigin=player;
@@ -106,7 +119,8 @@ ring(0,1.76+bob,0,.4,.26,.51,7,['#576b9c','#6f81b0','#40517b']);ring(0,2.27+bob,
 ring(0,1.79+bob,0,.405,.37,.12,7,['#baa46a','#e0c98c','#baa46a']);
 ring(.73,.02,.13,.055,.055,2.05,5,['#8a7051','#b09462','#68583e']);ring(.73,2.03,.13,.16,0,.32,5,['#a9e0c6','#dcf4ce','#7bbfb1']);
 meshOrigin=null;
-faces.sort((a,b)=>a.depth-b.depth);for(const f of faces){ctx.beginPath();f.p.forEach((p,i)=>i?ctx.lineTo(p[0],p[1]):ctx.moveTo(p[0],p[1]));ctx.closePath();ctx.fillStyle=f.color;ctx.fill();}
+// Ground is always drawn before actors; a large ground polygon must never hide the mage.
+faces.sort((a,b)=>a.layer-b.layer||a.depth-b.depth);for(const f of faces){ctx.beginPath();f.p.forEach((p,i)=>i?ctx.lineTo(p[0],p[1]):ctx.moveTo(p[0],p[1]));ctx.closePath();ctx.fillStyle=f.color;ctx.fill();}
 // Ground sigils sit around the robe, with a soft magical staff glow.
 if(Math.hypot(player.targetX-player.x,player.targetZ-player.z)>.05){lineGround(.3,'#e4efba',2,0,{x:player.targetX,z:player.targetZ});}
 lineGround(1.75,'#d8e9ab66',1);lineGround(1.95,'#d8e9ab33',1);
@@ -117,7 +131,7 @@ for(let i=0;i<16;i++){const t=reduced?i:now*.18+i*1.87,x=Math.sin(i*23.4)*7,z=Ma
 const vignette=ctx.createRadialGradient(w/2,h*.48,w*.15,w/2,h*.5,h*.7);vignette.addColorStop(0,'#081f2300');vignette.addColorStop(1,'#244e2028');ctx.fillStyle=vignette;ctx.fillRect(0,0,w,h);requestAnimationFrame(render);}
 function cast(){pulse=now;document.querySelector('#hint').textContent={arcane:'비전의 힘이 초원을 감쌉니다',fire:'화염의 힘이 깨어납니다',ice:'차가운 마력이 퍼져나갑니다'}[spell];}
 function moveToPointer(event){
- const rect=canvas.getBoundingClientRect(),rx=(event.clientX-rect.left-w/2)/scale,rz=(event.clientY-rect.top-h*.52)/(scale*.66);
+ const rect=canvas.getBoundingClientRect(),rx=(event.clientX-rect.left-w/2)/scale,rz=(event.clientY-rect.top-viewY)/(scale*.66);
  const c=Math.cos(angle),s=Math.sin(angle);
  const destination=nearestDestination(camera.x+rx*c+rz*s,camera.z-rx*s+rz*c);if(!destination)return;
  const {x,z}=destination,path=findRoute(x,z);if(!path)return;
