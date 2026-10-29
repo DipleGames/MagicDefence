@@ -1,7 +1,7 @@
 'use strict';
 // Small dependency-free polygon renderer. All scenery and the mage are 3D meshes.
 const canvas=document.querySelector('#world'),ctx=canvas.getContext('2d');
-let w=0,h=0,scale=1,angle=0,targetAngle=0,spell='arcane',pulse=-10,now=0;
+let w=0,h=0,scale=1,angle=0,targetAngle=0,spell='arcane',now=0;
 const combat=new DefenceGame();
 const player=combat.hero;
 let previousFrame=null,meshOrigin=null;
@@ -13,6 +13,7 @@ let navigation=null;
 let paused=false;
 let stageRect=null;
 let gameTime=0;
+let aimPointer=null;
 const abilities={arcane:{key:'Q',cost:12,cooldown:3},fire:{key:'W',cost:20,cooldown:5},ice:{key:'E',cost:25,cooldown:7},ultimate:{key:'R',cost:50,cooldown:16}};
 const readyAt={arcane:0,fire:0,ice:0,ultimate:0};
 const camera={x:0,z:0};
@@ -163,6 +164,11 @@ function drawEnemy(enemy){
  meshOrigin=null;
 }
 function drawDanger(){
+ for(const effect of combat.effects)if(effect.kind==='meteor'){
+  const p=project([effect.x,0,effect.z]);ellipse(p[0],p[1],effect.radius*scale,effect.radius*scale*.66,effect.impacted?'#f277364a':'#ffbf5333');lineGround(effect.radius,effect.impacted?'#ed9148cc':'#ffd28bcc',2,0,effect);
+  if(effect.impacted)for(let i=0;i<7;i++){const a=i*Math.PI*2/7+combat.time*.3,r=effect.radius*.65;const q=project([effect.x+Math.cos(a)*r,.1,effect.z+Math.sin(a)*r]);screenPoly([[q[0]-5,q[1]],[q[0],q[1]-12-Math.sin(combat.time*8+i)*4],[q[0]+5,q[1]]],'#ffcc6a99');}
+ }
+
  for(const hazard of combat.hazards){const p=project([hazard.x,0,hazard.z]),progress=(combat.time-hazard.start)/(hazard.resolveAt-hazard.start);ellipse(p[0],p[1],hazard.radius*scale,hazard.radius*scale*.66,'#dc51482b');lineGround(hazard.radius,'#f36a56dd',2,0,hazard);lineGround(hazard.radius*Math.min(1,progress),'#ffdb8dcc',2,0,hazard);}
  for(const enemy of combat.enemies)if(enemy.windup){lineGround(enemy.type==='thrower'?1.1:.35,'#f6aa5bdd',2,0,enemy.windup);const p=project([enemy.x,1.7,enemy.z]);ellipse(p[0],p[1],6,6,enemy.type==='thrower'?'#ffd68b':'#dbb5ff');}
  for(const p of combat.projectiles)if(p.kind==='rock')lineGround(p.radius,'#f3a15dbb',2,0,{x:p.targetX,z:p.targetZ});
@@ -170,8 +176,24 @@ function drawDanger(){
 }
 function drawCombatOverlay(){
  for(const enemy of combat.enemies){if(enemy.hp<=0)continue;const p=project([enemy.x,enemy.boss?2.9:1.65,enemy.z]),width=enemy.boss?58:30;ctx.fillStyle='#293b45';ctx.fillRect(p[0]-width/2,p[1]-4,width,5);ctx.fillStyle=enemy.boss?'#e2955f':'#df6e65';ctx.fillRect(p[0]-width/2+1,p[1]-3,(width-2)*enemy.hp/enemy.maxHp,3);}
- for(const p of combat.projectiles){if(p.kind==='rock'){const height=.3+Math.sin(Math.min(1,p.elapsed/p.duration)*Math.PI)*2.8,point=project([p.x,height,p.z]),shadow=project([p.x,0,p.z]);ellipse(shadow[0],shadow[1],scale*.25,scale*.12,'#54483844');const r=Math.max(7,scale*.24);screenPoly([[point[0]-r,point[1]],[point[0]-r*.3,point[1]-r],[point[0]+r*.7,point[1]-r*.5],[point[0]+r,point[1]+r*.5],[point[0],point[1]+r]],'#9b7953','#ffe2a3');continue;}const point=project([p.x,.6,p.z]);if(p.hostile){const tail=project([p.x-p.vx*.09,.6,p.z-p.vz*.09]);ctx.beginPath();ctx.moveTo(tail[0],tail[1]);ctx.lineTo(point[0],point[1]);ctx.strokeStyle='#f9a16d99';ctx.lineWidth=4;ctx.stroke();}ellipse(point[0],point[1],p.hostile?6:4,p.hostile?5:4,p.hostile?'#f79565':'#afefff');ellipse(point[0],point[1],2,2,'#fff6cf');}
+ for(const p of combat.projectiles){if(p.kind==='rock'){const height=.3+Math.sin(Math.min(1,p.elapsed/p.duration)*Math.PI)*2.8,point=project([p.x,height,p.z]),shadow=project([p.x,0,p.z]);ellipse(shadow[0],shadow[1],scale*.25,scale*.12,'#54483844');const r=Math.max(7,scale*.24);screenPoly([[point[0]-r,point[1]],[point[0]-r*.3,point[1]-r],[point[0]+r*.7,point[1]-r*.5],[point[0]+r,point[1]+r*.5],[point[0],point[1]+r]],'#9b7953','#ffe2a3');continue;}const point=project([p.x,.6,p.z]);if(p.hostile||p.kind==='arcane'||p.kind==='blinkBolt'){const tail=project([p.x-p.vx*.09,.6,p.z-p.vz*.09]);ctx.beginPath();ctx.moveTo(tail[0],tail[1]);ctx.lineTo(point[0],point[1]);ctx.strokeStyle=p.kind==='arcane'?'#86e7ffcc':p.kind==='blinkBolt'?'#b6c5ffbb':'#f9a16d99';ctx.lineWidth=p.kind==='arcane'?7:4;ctx.stroke();}ellipse(point[0],point[1],p.kind==='arcane'?9:p.hostile?6:4,p.kind==='arcane'?6:p.hostile?5:4,p.hostile?'#f79565':p.kind==='blinkBolt'?'#c2b5ff':'#afefff');ellipse(point[0],point[1],2,2,'#fff6cf');}
  ctx.textAlign='center';ctx.font='bold 13px system-ui';for(const number of combat.numbers){const p=project([number.x,1.9+(1-(number.until-combat.time)/.7),number.z]);ctx.fillStyle='#2c344b';ctx.fillText(number.text,p[0]+1,p[1]+1);ctx.fillStyle=number.color;ctx.fillText(number.text,p[0],p[1]);}
+}
+function drawSpellEffects(){
+ for(const effect of combat.effects){
+  if(effect.kind==='blink'){const alpha=Math.max(0,(effect.until-combat.time)/.45);ctx.globalAlpha=alpha;for(const point of [effect.from,effect.to]){const p=project([point.x,1,point.z]);const g=ctx.createRadialGradient(p[0],p[1],0,p[0],p[1],scale*1.6);g.addColorStop(0,'#dcf5ffbb');g.addColorStop(1,'#7cabff00');ctx.fillStyle=g;ctx.fillRect(p[0]-scale*1.6,p[1]-scale*1.6,scale*3.2,scale*3.2);lineGround(.8+(1-alpha)*.8,'#adebff',2,0,point);}ctx.globalAlpha=1;}
+  if(effect.kind==='meteor'&&!effect.impacted){const t=Math.min(1,(combat.time-effect.start)/.7),p=project([effect.x+(1-t)*2,(1-t)*9,effect.z-(1-t)*2]);ctx.beginPath();ctx.moveTo(p[0]+30,p[1]-70);ctx.lineTo(p[0],p[1]);ctx.strokeStyle='#ffda8a88';ctx.lineWidth=13;ctx.stroke();ellipse(p[0],p[1],14,18,'#f7a152');ellipse(p[0]-2,p[1]-3,8,10,'#fff1aa');}
+  if(effect.kind==='meteor'&&effect.impacted&&combat.time-effect.impactAt<.3){ctx.globalAlpha=1-(combat.time-effect.impactAt)/.3;lineGround(effect.radius*1.2,'#ffe0a8',5,0,effect);ctx.globalAlpha=1;}
+  if(effect.kind==='beam'){const a=project([effect.from.x,.8,effect.from.z]),b=project([effect.to.x,.8,effect.to.z]),charging=!effect.fired;
+   ctx.save();ctx.lineCap='round';
+   if(charging){ctx.setLineDash([7,9]);ctx.beginPath();ctx.moveTo(a[0],a[1]);ctx.lineTo(b[0],b[1]);ctx.strokeStyle='#d9bbf29c';ctx.lineWidth=2;ctx.stroke();ctx.setLineDash([]);ellipse(a[0],a[1],8+(combat.time-effect.start)*20,8+(combat.time-effect.start)*20,'#d4b7ffbb');}
+   else{ctx.globalAlpha=Math.max(0,(effect.until-combat.time)/.55);ctx.shadowColor='#b6a1ff';ctx.shadowBlur=20;
+    for(const [color,width] of [['#8e72da66',effect.width*scale*1.6],['#bd9dff',effect.width*scale*.8],['#fff4ff',effect.width*scale*.25]]){ctx.beginPath();ctx.moveTo(a[0],a[1]);ctx.lineTo(b[0],b[1]);ctx.strokeStyle=color;ctx.lineWidth=width;ctx.stroke();}
+    for(let i=0;i<10;i++){const t=i/10,p=project([effect.from.x+(effect.to.x-effect.from.x)*t,.8+Math.sin(i*3+combat.time*25)*.2,effect.from.z+(effect.to.z-effect.from.z)*t]);ellipse(p[0],p[1],3,3,'#fff6cd');}
+   }
+   ctx.restore();
+  }
+ }
 }
 function updateCombatHud(){
  const set=(selector,text)=>{document.querySelector(selector).textContent=text;};
@@ -189,7 +211,7 @@ function updateCombatHud(){
   route=[];document.querySelector('#pause-panel').hidden=false;set('#pause-title','도전 종료');set('#pause-summary',`스테이지 ${combat.stage} · Lv.${player.level} · ${combat.kills}마리 처치`);set('#resume','다시 도전 ▶');
  }else{set('#pause-title','잠시 쉬어가기');set('#pause-summary',`스테이지 ${Math.max(1,combat.stage)} · Lv.${player.level}`);set('#resume','계속하기 ▶');}
 }
-function restartRun(){combat.reset();gameTime=0;pulse=-10;route=[];angle=targetAngle=0;for(const id in readyAt)readyAt[id]=0;}
+function restartRun(){combat.reset();gameTime=0;aimPointer=null;route=[];angle=targetAngle=0;for(const id in readyAt)readyAt[id]=0;}
 function render(ms){now=ms/1000;const dt=previousFrame===null?0:Math.min(Math.max(now-previousFrame,0),.1);previousFrame=now;
  if(!paused&&combat.phase!=='defeat'){gameTime+=dt;updateMovement(dt);combat.update(dt);angle+=(targetAngle-angle)*(1-Math.exp(-7*dt));}
  updateAbilityHud();fitView();ctx.clearRect(0,0,w,h);drawScenery();faces=[];
@@ -223,13 +245,7 @@ for(const f of faces){
 if(Math.hypot(player.targetX-player.x,player.targetZ-player.z)>.05){lineGround(.3,'#e4efba',2,0,{x:player.targetX,z:player.targetZ});}
 lineGround(.66,'#72d4fcaa',2);lineGround(.8,'#345a7555',1);
 const glow=project(playerPoint([.73,2.3,.13]));const gradient=ctx.createRadialGradient(glow[0],glow[1],0,glow[0],glow[1],34);gradient.addColorStop(0,'#cff5bf60');gradient.addColorStop(1,'#cff5bf00');ctx.fillStyle=gradient;ctx.fillRect(glow[0]-34,glow[1]-34,68,68);
-const age=gameTime-pulse;if(age<1.3){const color=palette[spell];ctx.globalAlpha=1-age/1.3;
- const radius=spell==='ultimate'?1+age*7:.6+age*3.8;
- lineGround(radius,color,spell==='ultimate'?5:3);lineGround(radius*.78,color,1);
- if(spell==='fire'){for(let i=0;i<8;i++){const a=i*Math.PI/4,p=project([player.x+Math.cos(a)*radius,age*.8,player.z+Math.sin(a)*radius]);ellipse(p[0],p[1],scale*.15,scale*.28,color);}}
- if(spell==='ice'){for(let i=0;i<10;i++){const a=i*Math.PI/5,p=project([player.x+Math.cos(a)*radius,.2,player.z+Math.sin(a)*radius]);screenPoly([[p[0]-4,p[1]],[p[0],p[1]-scale*.55],[p[0]+4,p[1]],[p[0],p[1]+5]],color);}}
- if(spell==='ultimate'){const p=project([player.x,0,player.z]),beam=ctx.createLinearGradient(p[0]-30,0,p[0]+30,0);beam.addColorStop(0,'#d6afff00');beam.addColorStop(.5,'#f8e4ff99');beam.addColorStop(1,'#d6afff00');ctx.fillStyle=beam;ctx.fillRect(p[0]-30,0,60,p[1]);}
- ctx.globalAlpha=1;}
+drawSpellEffects();
 for(let i=0;i<16;i++){const t=reduced?i:now*.18+i*1.87,x=Math.sin(i*23.4)*7,z=Math.cos(i*17.3)*12,y=.4+(t%2),p=project([x,y,z]);ctx.globalAlpha=.25+.35*Math.sin(t*3)**2;ctx.fillStyle='#d3edac';ctx.beginPath();ctx.arc(p[0],p[1],1.2,0,Math.PI*2);ctx.fill();}ctx.globalAlpha=1;
 const bar=project([player.x,3.1,player.z]);ctx.fillStyle='#384c44';ctx.fillRect(bar[0]-19,bar[1]-5,38,7);ctx.fillStyle='#63dd64';ctx.fillRect(bar[0]-17,bar[1]-3,34*player.hp/player.maxHp,3);ctx.fillStyle='#247d3b';for(let i=1;i<5;i++)ctx.fillRect(bar[0]-17+i*6.8,bar[1]-3,1,3);
  drawCombatOverlay();
@@ -242,7 +258,7 @@ function updateAbilityHud(){
 }
 function cast(id=spell){
  const ability=abilities[id];if(paused||combat.phase!=='fighting'||!ability||readyAt[id]>gameTime||combat.hero.mana<ability.cost)return false;
- spell=id;combat.hero.mana-=ability.cost;readyAt[id]=gameTime+ability.cooldown/(1+player.haste);pulse=gameTime;combat.castSpell(id);
+ spell=id;combat.hero.mana-=ability.cost;readyAt[id]=gameTime+ability.cooldown/(1+player.haste);const point=aimPointer?groundPoint(aimPointer.x,aimPointer.y):[player.x+Math.sin(player.facing),0,player.z+Math.cos(player.facing)];combat.castSpell(id,{x:point[0],z:point[2]});if(id==='ice')route=[];
  document.querySelectorAll('.skill').forEach(button=>button.classList.toggle('active',button.dataset.spell===id));updateAbilityHud();return true;
 }
 function moveToPointer(event){
@@ -254,11 +270,12 @@ function moveToPointer(event){
  player.targetX=x;player.targetZ=z;route=path;
 }
 let lastMoveCommand=-Infinity;
-canvas.addEventListener('pointermove',event=>{if(event.buttons&2&&event.timeStamp-lastMoveCommand>=70){lastMoveCommand=event.timeStamp;moveToPointer(event);}});
+canvas.addEventListener('pointermove',event=>{const rect=canvas.getBoundingClientRect();aimPointer={x:event.clientX-rect.left,y:event.clientY-rect.top};if(event.buttons&2&&event.timeStamp-lastMoveCommand>=70){lastMoveCommand=event.timeStamp;moveToPointer(event);}});
+canvas.addEventListener('pointerleave',()=>{aimPointer=null;});
 canvas.addEventListener('contextmenu',event=>event.preventDefault());
 canvas.addEventListener('pointerdown',event=>{
  if(event.button===2||event.pointerType==='touch'){event.preventDefault();moveToPointer(event);}
- else if(event.button===0)cast();
+ else if(event.button===0){const rect=canvas.getBoundingClientRect();aimPointer={x:event.clientX-rect.left,y:event.clientY-rect.top};cast();}
 });
 document.querySelectorAll('.skill').forEach(button=>button.addEventListener('click',()=>cast(button.dataset.spell)));
 document.querySelector('#sound').addEventListener('click',()=>{if(!paused)targetAngle+=Math.PI/4;});

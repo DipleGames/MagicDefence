@@ -11,7 +11,8 @@ const TYPES={
  ember:{name:'잿불 대마도사',hp:600,damage:24,speed:1.15,xp:180,gold:80,color:'#dd7955',radius:1.1,boss:true},
  storm:{name:'폭풍의 파수꾼',hp:630,damage:28,speed:1.35,xp:180,gold:80,color:'#75adbf',radius:1.15,boss:true}
 };
-const SPELLS={arcane:{base:18,ratio:1.25,radius:4},fire:{base:32,ratio:1.8,radius:4.8},ice:{base:14,ratio:.9,radius:4.5},ultimate:{base:80,ratio:3.8,radius:8}};
+const SPELLS={arcane:{base:24,ratio:1.4,range:14,speed:16},fire:{base:32,ratio:1.2,range:9,radius:2.5},ice:{base:20,ratio:.65,range:5},ultimate:{base:100,ratio:3.8,range:20,width:1.15}};
+function segmentDistance(point,a,b){const dx=b.x-a.x,dz=b.z-a.z,length=dx*dx+dz*dz,t=length?Math.max(0,Math.min(1,((point.x-a.x)*dx+(point.z-a.z)*dz)/length)):0;return Math.hypot(a.x+dx*t-point.x,a.z+dz*t-point.z);}
 const distance=(a,b)=>Math.hypot(a.x-b.x,a.z-b.z);
 function stats(level){const n=level-1;return {maxHp:160+24*n,maxMana:100+8*n,power:24+6*n,armor:5+2*n,speed:Math.min(4.3,3.5+.04*n),manaRegen:7+.3*n,attackInterval:.85/(1+.04*n),haste:Math.min(.3,.015*n)};}
 function xpRequired(level){const n=level-1;return 60+30*n+10*n*n;}
@@ -27,14 +28,14 @@ class DefenceGame{
  reset(){
   const fresh={x:0,z:0,targetX:0,targetZ:0,facing:0,level:1,xp:0,gold:0,hp:160,mana:100,...stats(1)};
   if(this.hero)Object.assign(this.hero,fresh);else this.hero=fresh;
-  this.time=0;this.stage=0;this.phase='intermission';this.nextStageAt=2;this.enemies=[];this.projectiles=[];this.hazards=[];this.numbers=[];this.events=[];this.nextAttackAt=0;this.invulnerableUntil=0;this.kills=0;this.nextId=1;
+  this.time=0;this.stage=0;this.phase='intermission';this.nextStageAt=2;this.enemies=[];this.projectiles=[];this.hazards=[];this.effects=[];this.numbers=[];this.events=[];this.nextAttackAt=0;this.invulnerableUntil=0;this.kills=0;this.nextId=1;
   this.arena={left:-15,right:15,top:-8,bottom:8,angle:0};
  }
  setArena(arena){this.arena={...arena};for(const enemy of this.enemies)Object.assign(enemy,this.clampPoint(enemy));}
  clampPoint(point){const a=this.arena,c=Math.cos(a.angle),s=Math.sin(a.angle),rx=Math.max(a.left,Math.min(a.right,point.x*c-point.z*s)),rz=Math.max(a.top,Math.min(a.bottom,point.x*s+point.z*c));return {x:rx*c+rz*s,z:-rx*s+rz*c};}
  notify(text,kind='info'){this.events.push({text,kind,until:this.time+3});if(this.events.length>5)this.events.shift();}
  startStage(stage){
-  this.stage=stage;this.phase='fighting';this.projectiles=[];this.hazards=[];this.enemies=[];
+  this.stage=stage;this.phase='fighting';this.projectiles=[];this.hazards=[];this.effects=[];this.enemies=[];
   const plan=stagePlan(stage),a=this.arena,c=Math.cos(a.angle),s=Math.sin(a.angle);
   plan.types.forEach((type,i)=>{
    // Spawn around the perimeter, with a minimum separation from the hero.
@@ -63,14 +64,39 @@ class DefenceGame{
   if(this.phase!=='fighting'||this.time<this.invulnerableUntil)return;
   const amount=Math.max(1,Math.round(raw*100/(100+this.hero.armor)));this.hero.hp=Math.max(0,this.hero.hp-amount);this.invulnerableUntil=this.time+.45;
   this.numbers.push({x:this.hero.x,z:this.hero.z,text:`−${amount}`,color:'#ff8d7c',until:this.time+.7});
-  if(this.hero.hp===0){this.phase='defeat';this.projectiles=[];this.hazards=[];this.notify('도전 종료','defeat');}
+  if(this.hero.hp===0){this.phase='defeat';this.projectiles=[];this.hazards=[];this.effects=[];this.notify('도전 종료','defeat');}
  }
- castSpell(id){
-  if(this.phase!=='fighting')return 0;const ability=SPELLS[id];if(!ability)return 0;const damage=Math.round(ability.base+this.hero.power*ability.ratio);let hits=0;
-  for(const enemy of this.enemies){if(enemy.hp<=0||enemy.activeAt>this.time||distance(enemy,this.hero)>ability.radius+enemy.radius)continue;
-   this.damageEnemy(enemy,damage);hits++;
-   if(id==='ice')enemy.slowedUntil=this.time+3;
-  }return hits;
+ castSpell(id,aim){
+  if(this.phase!=='fighting')return 0;const ability=SPELLS[id];if(!ability)return 0;
+  const from={x:this.hero.x,z:this.hero.z},target=aim&&Number.isFinite(aim.x)&&Number.isFinite(aim.z)?aim:{x:from.x+Math.sin(this.hero.facing),z:from.z+Math.cos(this.hero.facing)};
+  const dx=target.x-from.x,dz=target.z-from.z,length=Math.hypot(dx,dz),ux=length>1e-8?dx/length:Math.sin(this.hero.facing),uz=length>1e-8?dz/length:Math.cos(this.hero.facing);
+  const damage=Math.round(ability.base+this.hero.power*ability.ratio);this.hero.facing=Math.atan2(ux,uz);
+  if(id==='arcane'){
+   this.projectiles.push({kind:'arcane',x:from.x,z:from.z,vx:ux*ability.speed,vz:uz*ability.speed,damage,hostile:false,speed:ability.speed,hitRadius:.32,life:ability.range/ability.speed});return 1;
+  }
+  if(id==='fire'){
+   const reach=Math.min(ability.range,length),point=this.clampPoint({x:from.x+ux*reach,z:from.z+uz*reach});
+   this.effects.push({kind:'meteor',...point,start:this.time,impactAt:this.time+.7,until:this.time+3.7,nextTick:this.time+1.2,radius:ability.radius,damage,tickDamage:Math.round(8+this.hero.power*.25),impacted:false});return 1;
+  }
+  if(id==='ice'){
+   const reach=Math.min(ability.range,length>1e-8?length:ability.range),point=this.clampPoint({x:from.x+ux*reach,z:from.z+uz*reach});
+   this.hero.x=this.hero.targetX=point.x;this.hero.z=this.hero.targetZ=point.z;this.invulnerableUntil=Math.max(this.invulnerableUntil,this.time+.2);
+   this.effects.push({kind:'blink',from,to:{...point},start:this.time,until:this.time+.45});
+   const enemy=this.enemies.filter(e=>e.hp>0&&e.activeAt<=this.time&&distance(e,point)<=6).sort((a,b)=>distance(a,point)-distance(b,point))[0];
+   if(enemy){this.shoot(point,enemy,damage,false,13);this.projectiles[this.projectiles.length-1].kind='blinkBolt';}return 1;
+  }
+  const to={x:from.x+ux*ability.range,z:from.z+uz*ability.range};
+  this.effects.push({kind:'beam',from,to,width:ability.width,damage,start:this.time,fireAt:this.time+.6,until:this.time+1.15,fired:false});return 1;
+ }
+ updateEffects(){
+  for(const effect of this.effects){
+   if(effect.kind==='meteor'){
+    if(!effect.impacted&&this.time>=effect.impactAt){effect.impacted=true;for(const enemy of this.enemies)if(enemy.hp>0&&enemy.activeAt<=this.time&&distance(enemy,effect)<=effect.radius+enemy.radius)this.damageEnemy(enemy,effect.damage);}
+    if(effect.impacted&&this.time>=effect.nextTick&&effect.nextTick<=effect.until+1e-8){for(const enemy of this.enemies)if(enemy.hp>0&&enemy.activeAt<=this.time&&distance(enemy,effect)<=effect.radius+enemy.radius)this.damageEnemy(enemy,effect.tickDamage);effect.nextTick+=.5;}
+   }
+   if(effect.kind==='beam'&&!effect.fired&&this.time>=effect.fireAt){effect.fired=true;for(const enemy of this.enemies)if(enemy.hp>0&&enemy.activeAt<=this.time&&segmentDistance(enemy,effect.from,effect.to)<=effect.width+enemy.radius)this.damageEnemy(enemy,effect.damage);}
+  }
+  this.effects=this.effects.filter(e=>e.until>this.time);
  }
  shoot(from,to,damage,hostile,speed=8,offset=0){const angle=Math.atan2(to.z-from.z,to.x-from.x)+offset;this.projectiles.push({x:from.x,z:from.z,vx:Math.cos(angle)*speed,vz:Math.sin(angle)*speed,damage,hostile,speed,targetId:to.id,life:5});}
  lobRock(enemy,point){const duration=Math.max(.65,distance(enemy,point)/9);this.projectiles.push({kind:'rock',x:enemy.x,z:enemy.z,startX:enemy.x,startZ:enemy.z,targetX:point.x,targetZ:point.z,elapsed:0,duration,radius:1.1,damage:enemy.damage,hostile:true,life:duration+.1});}
@@ -107,6 +133,7 @@ class DefenceGame{
    }
   }
   if(this.phase==='defeat')return;
+  this.updateEffects();
   // Nearest target auto attack continues while moving; skills provide crowd control and burst.
   const target=this.enemies.filter(e=>e.hp>0&&e.activeAt<=this.time&&distance(e,this.hero)<=8).sort((a,b)=>distance(a,this.hero)-distance(b,this.hero))[0];
   if(target&&this.time>=this.nextAttackAt){this.shoot(this.hero,target,Math.round(this.hero.power*.85),false,10);this.nextAttackAt=this.time+this.hero.attackInterval;}
@@ -116,12 +143,13 @@ class DefenceGame{
     if(progress>=1){if(distance(this.hero,{x:p.targetX,z:p.targetZ})<=p.radius+.35)this.damageHero(p.damage);p.life=0;}else p.life=p.duration-p.elapsed;
     continue;
    }
-   if(!p.hostile){const target=this.enemies.find(e=>e.id===p.targetId&&e.hp>0);if(target){const d=distance(p,target);if(d>0){p.vx=(target.x-p.x)/d*p.speed;p.vz=(target.z-p.z)/d*p.speed;}}}
-   const old={x:p.x,z:p.z};p.x+=p.vx*dt;p.z+=p.vz*dt;p.life-=dt;
+   if(!p.hostile&&p.kind!=='arcane'){const target=this.enemies.find(e=>e.id===p.targetId&&e.hp>0);if(target){const d=distance(p,target);if(d>0){p.vx=(target.x-p.x)/d*p.speed;p.vz=(target.z-p.z)/d*p.speed;}}}
+   const old={x:p.x,z:p.z},step=p.kind==='arcane'?Math.min(dt,Math.max(0,p.life)):dt;p.x+=p.vx*step;p.z+=p.vz*step;p.life-=dt;
    const targets=p.hostile?[this.hero]:this.enemies.filter(e=>e.hp>0&&e.activeAt<=this.time);
-   for(const t of targets){const vx=p.x-old.x,vz=p.z-old.z,length=vx*vx+vz*vz,f=length?Math.max(0,Math.min(1,((t.x-old.x)*vx+(t.z-old.z)*vz)/length)):0;
-    if(Math.hypot(old.x+vx*f-t.x,old.z+vz*f-t.z)<(t.radius||.45)+.15){if(p.hostile)this.damageHero(p.damage);else this.damageEnemy(t,p.damage);p.life=0;break;}
-   }
+   const vx=p.x-old.x,vz=p.z-old.z,length=vx*vx+vz*vz;
+   const contacts=targets.map(t=>{const f=length?Math.max(0,Math.min(1,((t.x-old.x)*vx+(t.z-old.z)*vz)/length)):0;return {target:t,f,hit:Math.hypot(old.x+vx*f-t.x,old.z+vz*f-t.z)<(t.radius||.45)+(p.hitRadius||.15)};}).filter(c=>c.hit).sort((a,b)=>a.f-b.f);
+   if(contacts.length){if(p.hostile)this.damageHero(p.damage);else this.damageEnemy(contacts[0].target,p.damage);p.life=0;}
+
   }
   if(this.phase==='defeat'){this.projectiles=[];this.hazards=[];return;}
   this.projectiles=this.projectiles.filter(p=>p.life>0);
@@ -131,7 +159,7 @@ class DefenceGame{
   if(this.phase==='fighting'&&this.enemies.length===0){
    const reward=20+this.stage*4;this.gainXp(reward);this.hero.gold+=10+this.stage*2;
    this.hero.hp=Math.min(this.hero.maxHp,this.hero.hp+this.hero.maxHp*.2);this.hero.mana=Math.min(this.hero.maxMana,this.hero.mana+this.hero.maxMana*.25);
-   this.projectiles=[];this.hazards=[];this.phase='intermission';this.nextStageAt=this.time+3;this.notify(`STAGE ${this.stage} CLEAR · 경험치 +${reward}`,'clear');
+   this.projectiles=[];this.hazards=[];this.effects=[];this.phase='intermission';this.nextStageAt=this.time+3;this.notify(`STAGE ${this.stage} CLEAR · 경험치 +${reward}`,'clear');
   }
  }
 }

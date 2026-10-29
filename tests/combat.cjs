@@ -20,7 +20,8 @@ assert.equal(stagePlan(10).types[0],'guardian');assert.equal(stagePlan(20).types
  const g=new DefenceGame();g.startStage(10);const boss=g.enemies.find(e=>e.boss);g.enemies.filter(e=>!e.boss).forEach(e=>g.damageEnemy(e,1e6));g.update(.02);assert.equal(g.phase,'fighting','boss still alive');g.damageEnemy(boss,1e6);g.update(.02);assert.equal(g.phase,'intermission');assert.equal(g.hazards.length,0);advance(g,3.1);assert.equal(g.stage,11);
 }
 {
- const g=new DefenceGame();g.startStage(1);g.enemies.forEach(e=>{e.x=0;e.z=0;e.hp=e.maxHp=100;e.activeAt=0;e.nextAttack=100;});assert.equal(g.castSpell('ice'),5);assert(g.enemies.every(e=>e.slowedUntil===3));const hp=g.enemies[0].hp;g.castSpell('arcane');assert(g.enemies[0].hp<hp);g.castSpell('ultimate');assert(g.kills>0);
+ const g=new DefenceGame();g.startStage(1);g.nextAttackAt=100;g.enemies.forEach(e=>{e.x=3;e.z=0;e.hp=e.maxHp=100;e.activeAt=0;e.nextAttack=100;e.speed=0;});
+ assert.equal(g.castSpell('fire',{x:3,z:0}),1);assert(g.enemies.every(e=>e.hp===100),'meteor is delayed');advance(g,.75);assert(g.enemies.every(e=>e.hp<100));g.castSpell('ultimate',{x:10,z:0});advance(g,.7);assert(g.kills>0);
 }
 {
  const g=new DefenceGame();g.startStage(1);g.damageHero(21);assert.equal(g.hero.hp,140);g.damageHero(100);assert.equal(g.hero.hp,140,'hit grace prevents burst stacking');advance(g,.5);g.damageHero(1e6);assert.equal(g.phase,'defeat');const time=g.time;advance(g,10);assert.equal(g.time,time,'defeat freezes simulation');assert.equal(g.stage,1);
@@ -44,7 +45,7 @@ assert.equal(stagePlan(10).types[0],'guardian');assert.equal(stagePlan(20).types
  const g=new DefenceGame();g.startStage(1);const enemy=g.enemies[0];enemy.x=12;enemy.z=0;enemy.activeAt=0;const hp=enemy.hp;g.castSpell('arcane');assert.equal(enemy.hp,hp,'range-limited spells cannot hit distant enemies');
 }
 for(let level=1;level<100;level++){assert(xpRequired(level+1)>xpRequired(level));assert(stats(level+1).maxHp>stats(level).maxHp);assert(stats(level+1).power>stats(level).power);}
-console.log('PASS: 100 stage plans, boss cadence/rotation, complete-stage transitions, XP and multi-level growth, rewards once, real auto-attack clear, skills/slow, telegraphs, swept hits, death/restart');
+console.log('PASS: 100 stage plans, boss cadence/rotation, complete-stage transitions, XP and multi-level growth, rewards once, real auto-attack clear, delayed skills, telegraphs, swept hits, death/restart');
 {
  assert(stagePlan(2).types.includes('thrower'),'projectile enemy appears in stage 2');assert(!stagePlan(1).types.includes('thrower'));assert(stagePlan(10).types.includes('thrower'),'boss escorts apply ranged pressure');
  const g=new DefenceGame();g.startStage(2);const enemy=g.enemies.find(e=>e.type==='thrower');g.enemies=[enemy];Object.assign(enemy,{x:8,z:0,activeAt:0,nextAttack:0});g.nextAttackAt=100;
